@@ -1,0 +1,644 @@
+package com.wasalni;
+
+// ============================================
+// AdminController - لوحة تحكم الأدمن
+// يتعامل مع:
+// POST /api/admin/login                    - تسجيل دخول الأدمن
+// GET  /api/admin/dashboard                - إحصائيات عامة
+// GET  /api/admin/users                    - كل الزبائن
+// PUT  /api/admin/users/{id}/block         - حظر/فك حظر زبون
+// GET  /api/admin/restaurants              - كل المطاعم
+// POST /api/admin/restaurants              - إضافة مطعم جديد
+// PUT  /api/admin/restaurants/{id}/toggle  - تفعيل/تعطيل مطعم
+// GET  /api/admin/drivers                  - كل السائقين
+// PUT  /api/admin/drivers/{id}/toggle      - تفعيل/تعطيل سائق
+// GET  /api/admin/orders                   - كل الطلبات
+// GET  /api/admin/coupons                  - كل الكوبونات
+// POST /api/admin/coupons                  - إضافة كوبون
+// PUT  /api/admin/coupons/{id}/toggle      - تفعيل/تعطيل كوبون
+// GET  /api/admin/categories               - كل التصنيفات
+// POST /api/admin/categories               - إضافة تصنيف
+// GET  /api/admin/banners                  - كل الإعلانات
+// POST /api/admin/banners                  - إضافة إعلان
+// DELETE /api/admin/banners/{id}           - حذف إعلان
+// ============================================
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.*;
+
+@RestController
+@CrossOrigin(origins = "*")
+@RequestMapping("/api/admin")
+public class AdminController {
+
+    // للتعامل مع قاعدة البيانات
+    @Autowired
+    JdbcTemplate db;
+
+    // لتشفير كلمات المرور
+    @Autowired
+    PasswordEncoder passwordEncoder;
+
+    // لإنشاء وقراءة التوكن
+    @Autowired
+    JwtUtil jwtUtil;
+
+    // بيانات الأدمن الثابتة - في المستقبل تنحط في قاعدة البيانات
+    private static final String ADMIN_USERNAME = "admin";
+    private static final String ADMIN_PASSWORD = "admin2030";
+
+    // ============================================
+    // POST /api/admin/login
+    // تسجيل دخول الأدمن
+    // ============================================
+    @PostMapping("/login")
+    public Map<String, Object> login(@RequestBody Map<String, Object> data) {
+        Map<String, Object> response = new HashMap<>();
+
+        try {
+            String username = (String) data.get("username");
+            String password = (String) data.get("password");
+
+            // التحقق من بيانات الأدمن
+            if (!ADMIN_USERNAME.equals(username) || !ADMIN_PASSWORD.equals(password)) {
+                response.put("success", false);
+                response.put("message", "اسم المستخدم أو كلمة المرور غير صحيحة");
+                return response;
+            }
+
+            // إنشاء توكن للأدمن
+            String token = jwtUtil.generateToken("admin", "admin");
+
+            response.put("success", true);
+            response.put("message", "مرحباً بك في لوحة التحكم");
+            response.put("token", token);
+
+        } catch (Exception e) {
+            response.put("success", false);
+            response.put("message", "حدث خطأ: " + e.getMessage());
+        }
+
+        return response;
+    }
+
+    // ============================================
+    // GET /api/admin/dashboard
+    // إحصائيات عامة للوحة التحكم
+    // ============================================
+    @GetMapping("/dashboard")
+    public Map<String, Object> getDashboard(@RequestHeader("Authorization") String authHeader) {
+        Map<String, Object> response = new HashMap<>();
+
+        try {
+            // إجمالي الزبائن
+            Map<String, Object> usersCount = db.queryForMap("SELECT COUNT(*) as total FROM users");
+
+            // إجمالي المطاعم
+            Map<String, Object> restaurantsCount = db.queryForMap("SELECT COUNT(*) as total FROM restaurants");
+
+            // إجمالي السائقين
+            Map<String, Object> driversCount = db.queryForMap("SELECT COUNT(*) as total FROM drivers");
+
+            // إجمالي الطلبات
+            Map<String, Object> ordersCount = db.queryForMap("SELECT COUNT(*) as total FROM orders");
+
+            // إجمالي الإيرادات
+            Map<String, Object> revenue = db.queryForMap(
+                "SELECT SUM(total_price) as total FROM orders WHERE status = 'delivered'"
+            );
+
+            // طلبات اليوم
+            Map<String, Object> todayOrders = db.queryForMap(
+                "SELECT COUNT(*) as total FROM orders WHERE DATE(created_at) = CURDATE()"
+            );
+
+            // إيرادات اليوم
+            Map<String, Object> todayRevenue = db.queryForMap(
+                "SELECT SUM(total_price) as total FROM orders WHERE status = 'delivered' AND DATE(created_at) = CURDATE()"
+            );
+
+            // الطلبات النشطة
+            Map<String, Object> activeOrders = db.queryForMap(
+                "SELECT COUNT(*) as total FROM orders WHERE status NOT IN ('delivered', 'cancelled')"
+            );
+
+            // تجميع الإحصائيات
+            Map<String, Object> stats = new HashMap<>();
+            stats.put("totalUsers", usersCount.get("total"));
+            stats.put("totalRestaurants", restaurantsCount.get("total"));
+            stats.put("totalDrivers", driversCount.get("total"));
+            stats.put("totalOrders", ordersCount.get("total"));
+            stats.put("totalRevenue", revenue.get("total"));
+            stats.put("todayOrders", todayOrders.get("total"));
+            stats.put("todayRevenue", todayRevenue.get("total"));
+            stats.put("activeOrders", activeOrders.get("total"));
+
+            response.put("success", true);
+            response.put("stats", stats);
+
+        } catch (Exception e) {
+            response.put("success", false);
+            response.put("message", "حدث خطأ: " + e.getMessage());
+        }
+
+        return response;
+    }
+
+    // ============================================
+    // GET /api/admin/users
+    // عرض كل الزبائن
+    // ============================================
+    @GetMapping("/users")
+    public Map<String, Object> getUsers(@RequestHeader("Authorization") String authHeader) {
+        Map<String, Object> response = new HashMap<>();
+
+        try {
+            List<Map<String, Object>> users = db.queryForList(
+                "SELECT id, name, email, phone, is_active, is_blocked, loyalty_points, wallet_balance, created_at " +
+                "FROM users ORDER BY created_at DESC"
+            );
+
+            response.put("success", true);
+            response.put("users", users);
+
+        } catch (Exception e) {
+            response.put("success", false);
+            response.put("message", "حدث خطأ: " + e.getMessage());
+        }
+
+        return response;
+    }
+
+    // ============================================
+    // PUT /api/admin/users/{id}/block
+    // حظر أو فك حظر زبون
+    // ============================================
+    @PutMapping("/users/{id}/block")
+    public Map<String, Object> toggleUserBlock(
+            @RequestHeader("Authorization") String authHeader,
+            @PathVariable int id,
+            @RequestBody Map<String, Object> data) {
+        Map<String, Object> response = new HashMap<>();
+
+        try {
+            Boolean isBlocked = (Boolean) data.get("isBlocked");
+
+            db.update("UPDATE users SET is_blocked = ? WHERE id = ?", isBlocked, id);
+
+            // تسجيل في سجل الأدمن
+            db.update(
+                "INSERT INTO admin_logs (admin_name, action, details) VALUES (?, ?, ?)",
+                "admin", isBlocked ? "حظر زبون" : "فك حظر زبون", "رقم الزبون: " + id
+            );
+
+            response.put("success", true);
+            response.put("message", isBlocked ? "تم حظر الزبون" : "تم فك الحظر عن الزبون");
+
+        } catch (Exception e) {
+            response.put("success", false);
+            response.put("message", "حدث خطأ: " + e.getMessage());
+        }
+
+        return response;
+    }
+
+    // ============================================
+    // GET /api/admin/restaurants
+    // عرض كل المطاعم
+    // ============================================
+    @GetMapping("/restaurants")
+    public Map<String, Object> getRestaurants(@RequestHeader("Authorization") String authHeader) {
+        Map<String, Object> response = new HashMap<>();
+
+        try {
+            List<Map<String, Object>> restaurants = db.queryForList(
+                "SELECT r.*, c.name as category_name, " +
+                "(SELECT COUNT(*) FROM orders WHERE restaurant_id = r.id) as total_orders " +
+                "FROM restaurants r " +
+                "LEFT JOIN categories c ON r.category_id = c.id " +
+                "ORDER BY r.created_at DESC"
+            );
+
+            response.put("success", true);
+            response.put("restaurants", restaurants);
+
+        } catch (Exception e) {
+            response.put("success", false);
+            response.put("message", "حدث خطأ: " + e.getMessage());
+        }
+
+        return response;
+    }
+
+    // ============================================
+    // POST /api/admin/restaurants
+    // إضافة مطعم جديد من الأدمن
+    // ============================================
+    @PostMapping("/restaurants")
+    public Map<String, Object> addRestaurant(
+            @RequestHeader("Authorization") String authHeader,
+            @RequestBody Map<String, Object> data) {
+        Map<String, Object> response = new HashMap<>();
+
+        try {
+            String name = (String) data.get("name");
+            String description = (String) data.get("description");
+            String phone = (String) data.get("phone");
+            String address = (String) data.get("address");
+            String image = (String) data.get("image");
+            String username = (String) data.get("username");
+            String password = (String) data.get("password");
+            Integer categoryId = (Integer) data.get("categoryId");
+
+            // تشفير كلمة مرور المطعم
+            String hashedPassword = passwordEncoder.encode(password);
+
+            db.update(
+                "INSERT INTO restaurants (name, description, phone, address, image, username, password, category_id) " +
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                name, description, phone, address, image, username, hashedPassword, categoryId
+            );
+
+            // تسجيل في سجل الأدمن
+            db.update(
+                "INSERT INTO admin_logs (admin_name, action, details) VALUES (?, ?, ?)",
+                "admin", "إضافة مطعم", "اسم المطعم: " + name
+            );
+
+            response.put("success", true);
+            response.put("message", "تم إضافة المطعم بنجاح");
+
+        } catch (Exception e) {
+            response.put("success", false);
+            response.put("message", "حدث خطأ: " + e.getMessage());
+        }
+
+        return response;
+    }
+
+    // ============================================
+    // PUT /api/admin/restaurants/{id}/toggle
+    // تفعيل أو تعطيل مطعم
+    // ============================================
+    @PutMapping("/restaurants/{id}/toggle")
+    public Map<String, Object> toggleRestaurant(
+            @RequestHeader("Authorization") String authHeader,
+            @PathVariable int id,
+            @RequestBody Map<String, Object> data) {
+        Map<String, Object> response = new HashMap<>();
+
+        try {
+            Boolean isActive = (Boolean) data.get("isActive");
+
+            db.update("UPDATE restaurants SET is_active = ? WHERE id = ?", isActive, id);
+
+            db.update(
+                "INSERT INTO admin_logs (admin_name, action, details) VALUES (?, ?, ?)",
+                "admin", isActive ? "تفعيل مطعم" : "تعطيل مطعم", "رقم المطعم: " + id
+            );
+
+            response.put("success", true);
+            response.put("message", isActive ? "تم تفعيل المطعم" : "تم تعطيل المطعم");
+
+        } catch (Exception e) {
+            response.put("success", false);
+            response.put("message", "حدث خطأ: " + e.getMessage());
+        }
+
+        return response;
+    }
+
+    // ============================================
+    // GET /api/admin/drivers
+    // عرض كل السائقين
+    // ============================================
+    @GetMapping("/drivers")
+    public Map<String, Object> getDrivers(@RequestHeader("Authorization") String authHeader) {
+        Map<String, Object> response = new HashMap<>();
+
+        try {
+            List<Map<String, Object>> drivers = db.queryForList(
+                "SELECT id, name, email, phone, vehicle_type, vehicle_plate, " +
+                "is_active, is_available, is_blocked, rating, total_deliveries, wallet_balance, created_at " +
+                "FROM drivers ORDER BY created_at DESC"
+            );
+
+            response.put("success", true);
+            response.put("drivers", drivers);
+
+        } catch (Exception e) {
+            response.put("success", false);
+            response.put("message", "حدث خطأ: " + e.getMessage());
+        }
+
+        return response;
+    }
+
+    // ============================================
+    // PUT /api/admin/drivers/{id}/toggle
+    // تفعيل أو تعطيل سائق
+    // ============================================
+    @PutMapping("/drivers/{id}/toggle")
+    public Map<String, Object> toggleDriver(
+            @RequestHeader("Authorization") String authHeader,
+            @PathVariable int id,
+            @RequestBody Map<String, Object> data) {
+        Map<String, Object> response = new HashMap<>();
+
+        try {
+            Boolean isActive = (Boolean) data.get("isActive");
+
+            db.update("UPDATE drivers SET is_active = ? WHERE id = ?", isActive, id);
+
+            db.update(
+                "INSERT INTO admin_logs (admin_name, action, details) VALUES (?, ?, ?)",
+                "admin", isActive ? "تفعيل سائق" : "تعطيل سائق", "رقم السائق: " + id
+            );
+
+            response.put("success", true);
+            response.put("message", isActive ? "تم تفعيل السائق" : "تم تعطيل السائق");
+
+        } catch (Exception e) {
+            response.put("success", false);
+            response.put("message", "حدث خطأ: " + e.getMessage());
+        }
+
+        return response;
+    }
+
+    // ============================================
+    // GET /api/admin/orders
+    // عرض كل الطلبات
+    // ============================================
+    @GetMapping("/orders")
+    public Map<String, Object> getOrders(@RequestHeader("Authorization") String authHeader) {
+        Map<String, Object> response = new HashMap<>();
+
+        try {
+            List<Map<String, Object>> orders = db.queryForList(
+                "SELECT o.*, u.name as user_name, r.name as restaurant_name, " +
+                "d.name as driver_name " +
+                "FROM orders o " +
+                "JOIN users u ON o.user_id = u.id " +
+                "JOIN restaurants r ON o.restaurant_id = r.id " +
+                "LEFT JOIN drivers d ON o.driver_id = d.id " +
+                "ORDER BY o.created_at DESC"
+            );
+
+            response.put("success", true);
+            response.put("orders", orders);
+
+        } catch (Exception e) {
+            response.put("success", false);
+            response.put("message", "حدث خطأ: " + e.getMessage());
+        }
+
+        return response;
+    }
+
+    // ============================================
+    // GET /api/admin/coupons
+    // عرض كل الكوبونات
+    // ============================================
+    @GetMapping("/coupons")
+    public Map<String, Object> getCoupons(@RequestHeader("Authorization") String authHeader) {
+        Map<String, Object> response = new HashMap<>();
+
+        try {
+            List<Map<String, Object>> coupons = db.queryForList(
+                "SELECT * FROM coupons ORDER BY created_at DESC"
+            );
+
+            response.put("success", true);
+            response.put("coupons", coupons);
+
+        } catch (Exception e) {
+            response.put("success", false);
+            response.put("message", "حدث خطأ: " + e.getMessage());
+        }
+
+        return response;
+    }
+
+    // ============================================
+    // POST /api/admin/coupons
+    // إضافة كوبون جديد
+    // ============================================
+    @PostMapping("/coupons")
+    public Map<String, Object> addCoupon(
+            @RequestHeader("Authorization") String authHeader,
+            @RequestBody Map<String, Object> data) {
+        Map<String, Object> response = new HashMap<>();
+
+        try {
+            String code = (String) data.get("code");
+            String discountType = (String) data.get("discountType");
+            Double discountValue = ((Number) data.get("discountValue")).doubleValue();
+            Double minOrder = data.get("minOrder") != null ? ((Number) data.get("minOrder")).doubleValue() : 0;
+            Integer maxUses = (Integer) data.get("maxUses");
+
+            db.update(
+                "INSERT INTO coupons (code, discount_type, discount_value, min_order, max_uses) VALUES (?, ?, ?, ?, ?)",
+                code, discountType, discountValue, minOrder, maxUses
+            );
+
+            response.put("success", true);
+            response.put("message", "تم إضافة الكوبون بنجاح");
+
+        } catch (Exception e) {
+            response.put("success", false);
+            response.put("message", "حدث خطأ: " + e.getMessage());
+        }
+
+        return response;
+    }
+
+    // ============================================
+    // PUT /api/admin/coupons/{id}/toggle
+    // تفعيل أو تعطيل كوبون
+    // ============================================
+    @PutMapping("/coupons/{id}/toggle")
+    public Map<String, Object> toggleCoupon(
+            @RequestHeader("Authorization") String authHeader,
+            @PathVariable int id,
+            @RequestBody Map<String, Object> data) {
+        Map<String, Object> response = new HashMap<>();
+
+        try {
+            Boolean isActive = (Boolean) data.get("isActive");
+
+            db.update("UPDATE coupons SET is_active = ? WHERE id = ?", isActive, id);
+
+            response.put("success", true);
+            response.put("message", isActive ? "تم تفعيل الكوبون" : "تم تعطيل الكوبون");
+
+        } catch (Exception e) {
+            response.put("success", false);
+            response.put("message", "حدث خطأ: " + e.getMessage());
+        }
+
+        return response;
+    }
+
+    // ============================================
+    // GET /api/admin/categories
+    // عرض كل التصنيفات
+    // ============================================
+    @GetMapping("/categories")
+    public Map<String, Object> getCategories(@RequestHeader("Authorization") String authHeader) {
+        Map<String, Object> response = new HashMap<>();
+
+        try {
+            List<Map<String, Object>> categories = db.queryForList(
+                "SELECT c.*, COUNT(r.id) as restaurants_count " +
+                "FROM categories c " +
+                "LEFT JOIN restaurants r ON c.id = r.category_id " +
+                "GROUP BY c.id"
+            );
+
+            response.put("success", true);
+            response.put("categories", categories);
+
+        } catch (Exception e) {
+            response.put("success", false);
+            response.put("message", "حدث خطأ: " + e.getMessage());
+        }
+
+        return response;
+    }
+
+    // ============================================
+    // POST /api/admin/categories
+    // إضافة تصنيف جديد
+    // ============================================
+    @PostMapping("/categories")
+    public Map<String, Object> addCategory(
+            @RequestHeader("Authorization") String authHeader,
+            @RequestBody Map<String, Object> data) {
+        Map<String, Object> response = new HashMap<>();
+
+        try {
+            String name = (String) data.get("name");
+            String icon = (String) data.get("icon");
+
+            db.update("INSERT INTO categories (name, icon) VALUES (?, ?)", name, icon);
+
+            response.put("success", true);
+            response.put("message", "تم إضافة التصنيف بنجاح");
+
+        } catch (Exception e) {
+            response.put("success", false);
+            response.put("message", "حدث خطأ: " + e.getMessage());
+        }
+
+        return response;
+    }
+
+    // ============================================
+    // GET /api/admin/banners
+    // عرض كل الإعلانات
+    // ============================================
+    @GetMapping("/banners")
+    public Map<String, Object> getBanners(@RequestHeader("Authorization") String authHeader) {
+        Map<String, Object> response = new HashMap<>();
+
+        try {
+            List<Map<String, Object>> banners = db.queryForList(
+                "SELECT * FROM banners ORDER BY sort_order ASC"
+            );
+
+            response.put("success", true);
+            response.put("banners", banners);
+
+        } catch (Exception e) {
+            response.put("success", false);
+            response.put("message", "حدث خطأ: " + e.getMessage());
+        }
+
+        return response;
+    }
+
+    // ============================================
+    // POST /api/admin/banners
+    // إضافة إعلان جديد
+    // ============================================
+    @PostMapping("/banners")
+    public Map<String, Object> addBanner(
+            @RequestHeader("Authorization") String authHeader,
+            @RequestBody Map<String, Object> data) {
+        Map<String, Object> response = new HashMap<>();
+
+        try {
+            String title = (String) data.get("title");
+            String image = (String) data.get("image");
+            String link = (String) data.get("link");
+            Integer sortOrder = (Integer) data.get("sortOrder");
+
+            db.update(
+                "INSERT INTO banners (title, image, link, sort_order) VALUES (?, ?, ?, ?)",
+                title, image, link, sortOrder
+            );
+
+            response.put("success", true);
+            response.put("message", "تم إضافة الإعلان بنجاح");
+
+        } catch (Exception e) {
+            response.put("success", false);
+            response.put("message", "حدث خطأ: " + e.getMessage());
+        }
+
+        return response;
+    }
+
+    // ============================================
+    // DELETE /api/admin/banners/{id}
+    // حذف إعلان
+    // ============================================
+    @DeleteMapping("/banners/{id}")
+    public Map<String, Object> deleteBanner(
+            @RequestHeader("Authorization") String authHeader,
+            @PathVariable int id) {
+        Map<String, Object> response = new HashMap<>();
+
+        try {
+            db.update("DELETE FROM banners WHERE id = ?", id);
+
+            response.put("success", true);
+            response.put("message", "تم حذف الإعلان بنجاح");
+
+        } catch (Exception e) {
+            response.put("success", false);
+            response.put("message", "حدث خطأ: " + e.getMessage());
+        }
+
+        return response;
+    }
+
+    // ============================================
+    // GET /api/admin/logs
+    // سجل تصرفات الأدمن
+    // ============================================
+    @GetMapping("/logs")
+    public Map<String, Object> getLogs(@RequestHeader("Authorization") String authHeader) {
+        Map<String, Object> response = new HashMap<>();
+
+        try {
+            List<Map<String, Object>> logs = db.queryForList(
+                "SELECT * FROM admin_logs ORDER BY created_at DESC LIMIT 100"
+            );
+
+            response.put("success", true);
+            response.put("logs", logs);
+
+        } catch (Exception e) {
+            response.put("success", false);
+            response.put("message", "حدث خطأ: " + e.getMessage());
+        }
+
+        return response;
+    }
+}
