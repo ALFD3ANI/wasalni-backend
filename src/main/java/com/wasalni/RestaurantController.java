@@ -22,6 +22,18 @@ public class RestaurantController {
         return res;
     }
 
+    @GetMapping("/debug")
+    public Map<String, String> debug() {
+        Map<String, String> res = new HashMap<>();
+        res.put("url", System.getenv("SPRING_DATASOURCE_URL"));
+        res.put("user", System.getenv("SPRING_DATASOURCE_USERNAME"));
+        res.put("password_length", String.valueOf(
+            System.getenv("SPRING_DATASOURCE_PASSWORD") != null ?
+            System.getenv("SPRING_DATASOURCE_PASSWORD").length() : 0
+        ));
+        return res;
+    }
+
     @GetMapping("/restaurants")
     public List<Map<String, Object>> getRestaurants() {
         return db.queryForList("SELECT * FROM restaurants");
