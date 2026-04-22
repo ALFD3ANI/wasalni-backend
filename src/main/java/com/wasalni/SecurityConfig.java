@@ -36,12 +36,18 @@ public class SecurityConfig {
                 // APIs مفتوحة للجميع بدون توكن
                 .requestMatchers(
                     "/api/auth/**",        // تسجيل الدخول والتسجيل
-                    "/api/restaurants",    // عرض المطاعم
-                    "/api/restaurants/**", // تفاصيل المطعم
-                    "/api/products",       // عرض المنتجات
-                    "/api/health",         // فحص صحة الـ API
-                    "/api/debug"           // للتطوير فقط
-                ).permitAll()
+                  "/api/auth/**",
+                  "/api/admin/login",
+                  "/api/restaurant/login",
+                  "/api/driver/login",
+                  "/api/driver/register",
+                  "/api/restaurants",
+                  "/api/restaurants/**",
+                  "/api/products",
+                  "/api/products/**",
+                  "/api/health",
+                  "/api/debug"
+                  ).permitAll()
 
                 // باقي الـ APIs تحتاج توكن
                 .anyRequest().authenticated()
