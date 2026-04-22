@@ -76,6 +76,9 @@ public class AdminController {
             response.put("success", true);
             response.put("message", "مرحباً بك في لوحة التحكم");
             response.put("token", token);
+            response.put("id", 1);
+            response.put("name", "Bader AL-anazi");
+            response.put("role", "admin");
 
         } catch (Exception e) {
             response.put("success", false);
