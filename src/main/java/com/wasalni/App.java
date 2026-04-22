@@ -7,7 +7,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 public class App {
     public static void main(String[] args) {
         System.setProperty("spring.datasource.url", 
-            "jdbc:mysql://mysql.railway.internal:3306/railway?useSSL=false&allowPublicKeyRetrieval=true");
+            "jdbc:mysql://roundhouse.proxy.rlwy.net:43646/railway?useSSL=false&allowPublicKeyRetrieval=true");
         System.setProperty("spring.datasource.username", "root");
         System.setProperty("spring.datasource.password", "ZTJGdVStqWTAeujLfwXDgIDfzDJleKor");
         System.setProperty("spring.datasource.driver-class-name", "com.mysql.cj.jdbc.Driver");
