@@ -37,7 +37,7 @@ public class SecurityConfig {
                 .requestMatchers(
                     "/api/auth/**",        // تسجيل الدخول والتسجيل
                   "/api/auth/**",
-                  "/api/admin/login",
+                  "/api/admin/**",
                   "/api/restaurant/login",
                   "/api/driver/login",
                   "/api/driver/register",
