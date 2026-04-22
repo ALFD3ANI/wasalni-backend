@@ -38,6 +38,8 @@ public class SecurityConfig {
                     "/api/auth/**",        // تسجيل الدخول والتسجيل
                   "/api/auth/**",
                   "/api/admin/**",
+                  "/api/restaurants/**",
+                  "/api/products/**",
                   "/api/restaurant/login",
                   "/api/driver/login",
                   "/api/driver/register",
