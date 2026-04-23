@@ -347,4 +347,42 @@ public class DriverController {
 
         return response;
     }
+    // ============================================
+    // GET /api/driver/track/{orderId}
+    // جلب موقع السائق لطلب معين — للزبون
+    // ============================================
+    @GetMapping("/track/{orderId}")
+    public Map<String, Object> trackDriver(@PathVariable int orderId) {
+        Map<String, Object> response = new HashMap<>();
+        try {
+            // جلب السائق المرتبط بالطلب
+            List<Map<String, Object>> orders = db.queryForList(
+                "SELECT driver_id FROM orders WHERE id = ?", orderId
+            );
+            if (orders.isEmpty() || orders.get(0).get("driver_id") == null) {
+                response.put("success", false);
+                response.put("message", "لا يوجد سائق لهذا الطلب");
+                return response;
+            }
+            int driverId = ((Number) orders.get(0).get("driver_id")).intValue();
+            // جلب موقع السائق
+            List<Map<String, Object>> locations = db.queryForList(
+                "SELECT dl.latitude, dl.longitude, dl.updated_at, d.name, d.phone, d.vehicle_type, d.vehicle_plate " +
+                "FROM driver_locations dl JOIN drivers d ON dl.driver_id = d.id " +
+                "WHERE dl.driver_id = ?", driverId
+            );
+            if (locations.isEmpty()) {
+                response.put("success", false);
+                response.put("message", "موقع السائق غير متوفر");
+                return response;
+            }
+            Map<String, Object> loc = locations.get(0);
+            response.put("success", true);
+            response.put("driver", loc);
+        } catch (Exception e) {
+            response.put("success", false);
+            response.put("message", "حدث خطأ: " + e.getMessage());
+        }
+        return response;
+    }
 }
