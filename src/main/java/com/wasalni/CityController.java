@@ -427,13 +427,12 @@ public class CityController {
                     req.get("image"), req.get("city_id")
                 );
             } else if ("driver".equals(type)) {
-                // إنشاء حساب سائق تلقائي
+                // إنشاء حساب سائق تلقائي — بدون city_id لأنه قد لا يكون في جدول السائقين
                 db.update(
-                    "INSERT INTO drivers (name, email, phone, password, vehicle_type, vehicle_plate, city_id, is_active) " +
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, 1)",
+                    "INSERT INTO drivers (name, email, phone, password, vehicle_type, vehicle_plate, is_active, is_available) " +
+                    "VALUES (?, ?, ?, ?, ?, ?, 1, 1)",
                     req.get("name"), req.get("email"), req.get("phone"),
-                    req.get("password"), req.get("vehicle_type"), req.get("vehicle_plate"),
-                    req.get("city_id")
+                    req.get("password"), req.get("vehicle_type"), req.get("vehicle_plate")
                 );
             }
 
