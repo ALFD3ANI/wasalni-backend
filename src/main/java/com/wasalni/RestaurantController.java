@@ -652,6 +652,17 @@ public class RestaurantController {
         Map<String, Object> response = new HashMap<>();
         try {
             String restaurantId = getRestaurantIdFromToken(authHeader);
+            // إنشاء الجدول إذا لم يكن موجوداً
+            db.execute(
+                "CREATE TABLE IF NOT EXISTS product_extras (" +
+                "id INT AUTO_INCREMENT PRIMARY KEY, " +
+                "product_id INT NOT NULL, " +
+                "name VARCHAR(100) NOT NULL, " +
+                "name_en VARCHAR(100), " +
+                "price DECIMAL(8,2) DEFAULT 0, " +
+                "is_available TINYINT DEFAULT 1, " +
+                "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
+            );
             // التحقق أن المنتج تابع للمطعم
             List<Map<String, Object>> check = db.queryForList(
                 "SELECT id FROM products WHERE id = ? AND restaurant_id = ?", id, restaurantId
