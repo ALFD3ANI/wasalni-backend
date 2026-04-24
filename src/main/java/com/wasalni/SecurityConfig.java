@@ -38,6 +38,7 @@ public class SecurityConfig {
                     "/api/restaurant/auth/**",
                     "/api/driver/auth/**",
                     "/api/driver/track/**",
+                    "/api/driver/**",
                     "/api/cities",
                     "/api/cities/**",
                     "/api/join/**",
