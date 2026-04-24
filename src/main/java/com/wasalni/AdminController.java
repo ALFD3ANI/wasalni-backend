@@ -855,6 +855,14 @@ public class AdminController {
         Map<String, Object> response = new HashMap<>();
 
         try {
+            db.execute(
+                "CREATE TABLE IF NOT EXISTS admin_logs (" +
+                "id INT AUTO_INCREMENT PRIMARY KEY, " +
+                "admin_name VARCHAR(100), " +
+                "action VARCHAR(255), " +
+                "details TEXT, " +
+                "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
+            );
             List<Map<String, Object>> logs = db.queryForList(
                 "SELECT * FROM admin_logs ORDER BY created_at DESC LIMIT 100"
             );

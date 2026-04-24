@@ -230,25 +230,27 @@ public class DriverController {
             String driverId = getDriverIdFromToken(authHeader);
             String status = (String) data.get("status");
 
-            // إذا السائق يقبل الطلب - يضيف نفسه للطلب
+            // إذا السائق يقبل الطلب - يضيف نفسه للطلب ويصبح مشغولاً
             if (status.equals("picked_up")) {
                 db.update(
                     "UPDATE orders SET driver_id = ?, status = ? WHERE id = ? AND status = 'ready'",
                     driverId, status, id
                 );
+                db.update("UPDATE drivers SET is_available = 0 WHERE id = ?", driverId);
             } else {
-                // تحديث الحالة
                 db.update(
                     "UPDATE orders SET status = ? WHERE id = ? AND driver_id = ?",
                     status, id, driverId
                 );
 
-                // إذا الطلب وصل - نحدث إحصائيات السائق
+                // إذا الطلب وصل أو ألغي - السائق يصبح متاحاً مجدداً
                 if (status.equals("delivered")) {
                     db.update(
-                        "UPDATE drivers SET total_deliveries = total_deliveries + 1 WHERE id = ?",
+                        "UPDATE drivers SET total_deliveries = total_deliveries + 1, is_available = 1 WHERE id = ?",
                         driverId
                     );
+                } else if (status.equals("cancelled")) {
+                    db.update("UPDATE drivers SET is_available = 1 WHERE id = ?", driverId);
                 }
             }
 
