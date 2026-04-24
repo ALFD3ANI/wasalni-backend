@@ -445,6 +445,15 @@ public class RestaurantController {
             String restaurantId = getRestaurantIdFromToken(authHeader);
             String status = (String) data.get("status");
 
+            // قراءة الحالة الحالية قبل التحديث لمنع تكرار نقاط الولاء
+            String previousStatus = "";
+            try {
+                Map<String, Object> currentOrder = db.queryForMap(
+                    "SELECT status FROM orders WHERE id = ?", id
+                );
+                previousStatus = (String) currentOrder.get("status");
+            } catch (Exception ignored) {}
+
             db.update(
                 "UPDATE orders SET status = ? WHERE id = ? AND restaurant_id = ?",
                 status, id, restaurantId
@@ -478,8 +487,8 @@ public class RestaurantController {
                     trackMsg + " — " + orderInfo.get("rest_name"),
                     "order_update"
                 );
-                // عند التوصيل: أضف نقاط ولاء (1 ريال = 1 نقطة)
-                if ("delivered".equals(status)) {
+                // عند التوصيل: أضف نقاط ولاء فقط إذا لم تكن الحالة السابقة "delivered"
+                if ("delivered".equals(status) && !"delivered".equals(previousStatus)) {
                     int points = ((Number) orderInfo.get("total_price")).intValue();
                     db.update(
                         "UPDATE users SET loyalty_points = loyalty_points + ? WHERE id = ?",
