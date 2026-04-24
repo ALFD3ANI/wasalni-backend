@@ -239,6 +239,26 @@ public class CityController {
         Map<String, Object> response = new HashMap<>();
 
         try {
+            // إنشاء جدول طلبات الانضمام إذا لم يكن موجوداً
+            db.execute(
+                "CREATE TABLE IF NOT EXISTS join_requests (" +
+                "id INT AUTO_INCREMENT PRIMARY KEY, " +
+                "type VARCHAR(20) NOT NULL, " +
+                "name VARCHAR(100) NOT NULL, " +
+                "email VARCHAR(100), " +
+                "phone VARCHAR(20), " +
+                "city_id INT, " +
+                "password VARCHAR(255), " +
+                "description TEXT, " +
+                "address VARCHAR(255), " +
+                "image VARCHAR(500), " +
+                "commercial_reg VARCHAR(50), " +
+                "vehicle_type VARCHAR(50), " +
+                "vehicle_plate VARCHAR(20), " +
+                "status VARCHAR(20) DEFAULT 'pending', " +
+                "reject_reason TEXT, " +
+                "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
+            );
             String name = (String) data.get("name");
             String email = (String) data.get("email");
             String phone = (String) data.get("phone");

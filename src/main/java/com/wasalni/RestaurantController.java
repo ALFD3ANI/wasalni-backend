@@ -474,6 +474,21 @@ public class RestaurantController {
                 id, status, trackMsg
             );
 
+            // تعيين سائق تلقائي عند جهوزية الطلب
+            if ("ready".equals(status)) {
+                try {
+                    List<Map<String, Object>> available = db.queryForList(
+                        "SELECT id, name FROM drivers WHERE is_available = 1 AND is_active = 1 " +
+                        "AND (is_blocked IS NULL OR is_blocked = 0) ORDER BY RAND() LIMIT 1"
+                    );
+                    if (!available.isEmpty()) {
+                        int driverId = ((Number) available.get(0).get("id")).intValue();
+                        db.update("UPDATE orders SET driver_id = ? WHERE id = ?", driverId, id);
+                        db.update("UPDATE drivers SET is_available = 0 WHERE id = ?", driverId);
+                    }
+                } catch (Exception ignored) {}
+            }
+
             // إرسال إشعار للزبون + إضافة نقاط ولاء عند التوصيل
             try {
                 Map<String, Object> orderInfo = db.queryForMap(
