@@ -622,6 +622,207 @@ public class AdminController {
     }
 
     // ============================================
+    // GET /api/admin/reports/orders-by-status
+    // تقرير: توزيع الطلبات حسب الحالة
+    // ============================================
+    @GetMapping("/reports/orders-by-status")
+    public Map<String, Object> reportOrdersByStatus(@RequestHeader("Authorization") String authHeader) {
+        Map<String, Object> response = new HashMap<>();
+        try {
+            List<Map<String, Object>> data = db.queryForList(
+                "SELECT status, COUNT(*) as count FROM orders GROUP BY status ORDER BY count DESC"
+            );
+            response.put("success", true);
+            response.put("data", data);
+        } catch (Exception e) {
+            response.put("success", false);
+            response.put("message", "حدث خطأ: " + e.getMessage());
+        }
+        return response;
+    }
+
+    // ============================================
+    // GET /api/admin/reports/revenue-weekly
+    // تقرير: إيرادات آخر 7 أيام
+    // ============================================
+    @GetMapping("/reports/revenue-weekly")
+    public Map<String, Object> reportRevenueWeekly(@RequestHeader("Authorization") String authHeader) {
+        Map<String, Object> response = new HashMap<>();
+        try {
+            List<Map<String, Object>> data = db.queryForList(
+                "SELECT DATE(created_at) as day, SUM(total_price) as revenue, COUNT(*) as orders " +
+                "FROM orders WHERE created_at >= DATE_SUB(CURDATE(), INTERVAL 7 DAY) " +
+                "GROUP BY DATE(created_at) ORDER BY day ASC"
+            );
+            response.put("success", true);
+            response.put("data", data);
+        } catch (Exception e) {
+            response.put("success", false);
+            response.put("message", "حدث خطأ: " + e.getMessage());
+        }
+        return response;
+    }
+
+    // ============================================
+    // GET /api/admin/reports/top-restaurants
+    // تقرير: أفضل 10 مطاعم حسب عدد الطلبات
+    // ============================================
+    @GetMapping("/reports/top-restaurants")
+    public Map<String, Object> reportTopRestaurants(@RequestHeader("Authorization") String authHeader) {
+        Map<String, Object> response = new HashMap<>();
+        try {
+            List<Map<String, Object>> data = db.queryForList(
+                "SELECT r.name, COUNT(o.id) as order_count, SUM(o.total_price) as total_revenue " +
+                "FROM restaurants r JOIN orders o ON r.id = o.restaurant_id " +
+                "GROUP BY r.id, r.name ORDER BY order_count DESC LIMIT 10"
+            );
+            response.put("success", true);
+            response.put("data", data);
+        } catch (Exception e) {
+            response.put("success", false);
+            response.put("message", "حدث خطأ: " + e.getMessage());
+        }
+        return response;
+    }
+
+    // ============================================
+    // GET /api/admin/reports/new-users
+    // تقرير: مستخدمون جدد آخر 7 أيام
+    // ============================================
+    @GetMapping("/reports/new-users")
+    public Map<String, Object> reportNewUsers(@RequestHeader("Authorization") String authHeader) {
+        Map<String, Object> response = new HashMap<>();
+        try {
+            List<Map<String, Object>> data = db.queryForList(
+                "SELECT DATE(created_at) as day, COUNT(*) as new_users " +
+                "FROM users WHERE created_at >= DATE_SUB(CURDATE(), INTERVAL 7 DAY) " +
+                "GROUP BY DATE(created_at) ORDER BY day ASC"
+            );
+            response.put("success", true);
+            response.put("data", data);
+        } catch (Exception e) {
+            response.put("success", false);
+            response.put("message", "حدث خطأ: " + e.getMessage());
+        }
+        return response;
+    }
+
+    // ============================================
+    // GET /api/admin/admin-users
+    // عرض كل مديري النظام
+    // ============================================
+    @GetMapping("/admin-users")
+    public Map<String, Object> getAdminUsers(@RequestHeader("Authorization") String authHeader) {
+        Map<String, Object> response = new HashMap<>();
+        try {
+            // إنشاء الجدول إذا لم يكن موجوداً
+            db.execute(
+                "CREATE TABLE IF NOT EXISTS admin_users (" +
+                "id INT AUTO_INCREMENT PRIMARY KEY, " +
+                "name VARCHAR(100) NOT NULL, " +
+                "username VARCHAR(50) UNIQUE NOT NULL, " +
+                "password VARCHAR(255) NOT NULL, " +
+                "role VARCHAR(20) DEFAULT 'admin', " +
+                "is_active TINYINT DEFAULT 1, " +
+                "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
+            );
+            List<Map<String, Object>> admins = db.queryForList(
+                "SELECT id, name, username, role, is_active, created_at FROM admin_users ORDER BY created_at DESC"
+            );
+            response.put("success", true);
+            response.put("admins", admins);
+        } catch (Exception e) {
+            response.put("success", false);
+            response.put("message", "حدث خطأ: " + e.getMessage());
+        }
+        return response;
+    }
+
+    // ============================================
+    // POST /api/admin/admin-users
+    // إضافة مدير نظام جديد
+    // ============================================
+    @PostMapping("/admin-users")
+    public Map<String, Object> addAdminUser(
+            @RequestHeader("Authorization") String authHeader,
+            @RequestBody Map<String, Object> data) {
+        Map<String, Object> response = new HashMap<>();
+        try {
+            String name     = (String) data.get("name");
+            String username = (String) data.get("username");
+            String password = (String) data.get("password");
+            String role     = data.get("role") != null ? (String) data.get("role") : "admin";
+
+            String hashed = passwordEncoder.encode(password);
+            db.update(
+                "INSERT INTO admin_users (name, username, password, role) VALUES (?, ?, ?, ?)",
+                name, username, hashed, role
+            );
+            db.update(
+                "INSERT INTO admin_logs (admin_name, action, details) VALUES (?, ?, ?)",
+                "admin", "إضافة مدير", "اسم المستخدم: " + username
+            );
+            response.put("success", true);
+            response.put("message", "تم إضافة المدير بنجاح");
+        } catch (Exception e) {
+            response.put("success", false);
+            response.put("message", "حدث خطأ: " + e.getMessage());
+        }
+        return response;
+    }
+
+    // ============================================
+    // PUT /api/admin/admin-users/{id}
+    // تعديل بيانات مدير نظام
+    // ============================================
+    @PutMapping("/admin-users/{id}")
+    public Map<String, Object> updateAdminUser(
+            @RequestHeader("Authorization") String authHeader,
+            @PathVariable int id,
+            @RequestBody Map<String, Object> data) {
+        Map<String, Object> response = new HashMap<>();
+        try {
+            String name     = (String) data.get("name");
+            String role     = (String) data.get("role");
+            Boolean active  = (Boolean) data.get("isActive");
+            db.update(
+                "UPDATE admin_users SET name = ?, role = ?, is_active = ? WHERE id = ?",
+                name, role, active, id
+            );
+            response.put("success", true);
+            response.put("message", "تم تحديث بيانات المدير");
+        } catch (Exception e) {
+            response.put("success", false);
+            response.put("message", "حدث خطأ: " + e.getMessage());
+        }
+        return response;
+    }
+
+    // ============================================
+    // DELETE /api/admin/admin-users/{id}
+    // حذف مدير نظام
+    // ============================================
+    @DeleteMapping("/admin-users/{id}")
+    public Map<String, Object> deleteAdminUser(
+            @RequestHeader("Authorization") String authHeader,
+            @PathVariable int id) {
+        Map<String, Object> response = new HashMap<>();
+        try {
+            db.update("DELETE FROM admin_users WHERE id = ?", id);
+            db.update(
+                "INSERT INTO admin_logs (admin_name, action, details) VALUES (?, ?, ?)",
+                "admin", "حذف مدير", "رقم المدير: " + id
+            );
+            response.put("success", true);
+            response.put("message", "تم حذف المدير بنجاح");
+        } catch (Exception e) {
+            response.put("success", false);
+            response.put("message", "حدث خطأ: " + e.getMessage());
+        }
+        return response;
+    }
+
+    // ============================================
     // GET /api/admin/logs
     // سجل تصرفات الأدمن
     // ============================================

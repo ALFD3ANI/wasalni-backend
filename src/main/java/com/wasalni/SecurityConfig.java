@@ -44,7 +44,11 @@ public class SecurityConfig {
                     "/api/cities/**",
                     "/api/join/**",
                     "/api/health",
-                    "/api/debug"
+                    "/api/debug",
+                    "/api/user/**",
+                    "/api/notifications/**",
+                    "/api/coupons/**",
+                    "/api/search/**"
                 ).permitAll()
                 .anyRequest().authenticated()
             );

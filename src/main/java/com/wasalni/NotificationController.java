@@ -22,6 +22,57 @@ public class NotificationController {
     @Autowired
     private JdbcTemplate db;
 
+    // لقراءة التوكن
+    @Autowired
+    private JwtUtil jwtUtil;
+
+    // ======================================================
+    // GET /api/notifications/my — إشعارات المستخدم الحالي (عبر التوكن)
+    // ======================================================
+    @GetMapping("/my")
+    public Map<String, Object> getMyNotifications(@RequestHeader("Authorization") String authHeader) {
+        Map<String, Object> response = new HashMap<>();
+        try {
+            String token = authHeader.replace("Bearer ", "");
+            String userId = jwtUtil.getSubject(token);
+
+            List<Map<String, Object>> notifications = db.queryForList(
+                "SELECT * FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 50",
+                userId
+            );
+            int unreadCount = db.queryForObject(
+                "SELECT COUNT(*) FROM notifications WHERE user_id = ? AND is_read = 0",
+                Integer.class, userId
+            );
+            response.put("success", true);
+            response.put("notifications", notifications);
+            response.put("unread_count", unreadCount);
+        } catch (Exception e) {
+            response.put("success", false);
+            response.put("message", "خطأ: " + e.getMessage());
+        }
+        return response;
+    }
+
+    // ======================================================
+    // PUT /api/notifications/my/read-all — تحديد كل إشعاراتي كمقروءة
+    // ======================================================
+    @PutMapping("/my/read-all")
+    public Map<String, Object> markMyAllAsRead(@RequestHeader("Authorization") String authHeader) {
+        Map<String, Object> response = new HashMap<>();
+        try {
+            String token = authHeader.replace("Bearer ", "");
+            String userId = jwtUtil.getSubject(token);
+            db.update("UPDATE notifications SET is_read = 1 WHERE user_id = ?", userId);
+            response.put("success", true);
+            response.put("message", "تم تحديد كل الإشعارات كمقروءة");
+        } catch (Exception e) {
+            response.put("success", false);
+            response.put("message", "خطأ: " + e.getMessage());
+        }
+        return response;
+    }
+
     // ======================================================
     // 1. الزبون أو السائق يجيب كل إشعاراته
     // GET /api/notifications/{userId}

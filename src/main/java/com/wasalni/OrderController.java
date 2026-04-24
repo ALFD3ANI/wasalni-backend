@@ -335,6 +335,60 @@ public class OrderController {
     }
 
     // ============================================
+    // GET /api/orders/{id}/timeline
+    // مراحل الطلب مع أيقونات وألوان للعرض في الواجهة
+    // ============================================
+    @GetMapping("/{id}/timeline")
+    public Map<String, Object> getOrderTimeline(
+            @RequestHeader("Authorization") String authHeader,
+            @PathVariable int id) {
+        Map<String, Object> response = new HashMap<>();
+        try {
+            String userId = getUserIdFromToken(authHeader);
+
+            // التحقق أن الطلب تابع للمستخدم الحالي
+            List<Map<String, Object>> orderCheck = db.queryForList(
+                "SELECT id, status FROM orders WHERE id = ? AND user_id = ?", id, userId
+            );
+            if (orderCheck.isEmpty()) {
+                response.put("success", false);
+                response.put("message", "الطلب غير موجود");
+                return response;
+            }
+
+            // جلب مراحل التتبع بالترتيب الزمني
+            List<Map<String, Object>> steps = db.queryForList(
+                "SELECT status, message, created_at FROM order_tracking WHERE order_id = ? ORDER BY created_at ASC",
+                id
+            );
+
+            // إضافة أيقونة ولون لكل مرحلة حسب الحالة
+            for (Map<String, Object> step : steps) {
+                String s = (String) step.get("status");
+                switch (s) {
+                    case "pending":    step.put("icon", "🕐"); step.put("color", "#FFA500"); break;
+                    case "accepted":   step.put("icon", "✅"); step.put("color", "#2196F3"); break;
+                    case "preparing":  step.put("icon", "👨‍🍳"); step.put("color", "#9C27B0"); break;
+                    case "ready":      step.put("icon", "📦"); step.put("color", "#FF5722"); break;
+                    case "picked_up":  step.put("icon", "🛵"); step.put("color", "#00BCD4"); break;
+                    case "delivered":  step.put("icon", "🏠"); step.put("color", "#4CAF50"); break;
+                    case "cancelled":  step.put("icon", "❌"); step.put("color", "#F44336"); break;
+                    default:           step.put("icon", "📍"); step.put("color", "#757575");
+                }
+            }
+
+            response.put("success", true);
+            response.put("currentStatus", orderCheck.get(0).get("status"));
+            response.put("timeline", steps);
+
+        } catch (Exception e) {
+            response.put("success", false);
+            response.put("message", "حدث خطأ: " + e.getMessage());
+        }
+        return response;
+    }
+
+    // ============================================
     // POST /api/orders/{id}/review
     // تقييم الطلب بعد التوصيل
     // ============================================
