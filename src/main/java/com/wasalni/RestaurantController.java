@@ -617,19 +617,18 @@ public class RestaurantController {
     public Map<String, Object> getProductExtras(@PathVariable int id) {
         Map<String, Object> response = new HashMap<>();
         try {
-            // إنشاء جدول الإضافات إذا لم يكن موجوداً
+            // إنشاء جدول الإضافات الخاص بنا (menu_extras) إذا لم يكن موجوداً
             db.execute(
-                "CREATE TABLE IF NOT EXISTS product_extras (" +
+                "CREATE TABLE IF NOT EXISTS menu_extras (" +
                 "id INT AUTO_INCREMENT PRIMARY KEY, " +
                 "product_id INT NOT NULL, " +
                 "name VARCHAR(100) NOT NULL, " +
-                "name_en VARCHAR(100), " +
                 "price DECIMAL(8,2) DEFAULT 0, " +
                 "is_available TINYINT DEFAULT 1, " +
                 "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
             );
             List<Map<String, Object>> extras = db.queryForList(
-                "SELECT * FROM product_extras WHERE product_id = ? AND is_available = 1 ORDER BY price ASC",
+                "SELECT * FROM menu_extras WHERE product_id = ? AND is_available = 1 ORDER BY price ASC",
                 id
             );
             response.put("success", true);
@@ -654,11 +653,10 @@ public class RestaurantController {
             String restaurantId = getRestaurantIdFromToken(authHeader);
             // إنشاء الجدول إذا لم يكن موجوداً
             db.execute(
-                "CREATE TABLE IF NOT EXISTS product_extras (" +
+                "CREATE TABLE IF NOT EXISTS menu_extras (" +
                 "id INT AUTO_INCREMENT PRIMARY KEY, " +
                 "product_id INT NOT NULL, " +
                 "name VARCHAR(100) NOT NULL, " +
-                "name_en VARCHAR(100), " +
                 "price DECIMAL(8,2) DEFAULT 0, " +
                 "is_available TINYINT DEFAULT 1, " +
                 "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
@@ -675,7 +673,7 @@ public class RestaurantController {
             String name  = (String) data.get("name");
             Double price = data.get("price") != null ? ((Number) data.get("price")).doubleValue() : 0.0;
             db.update(
-                "INSERT INTO product_extras (product_id, name, price) VALUES (?, ?, ?)",
+                "INSERT INTO menu_extras (product_id, name, price) VALUES (?, ?, ?)",
                 id, name, price
             );
             response.put("success", true);
@@ -696,7 +694,7 @@ public class RestaurantController {
             @PathVariable int id) {
         Map<String, Object> response = new HashMap<>();
         try {
-            db.update("DELETE FROM product_extras WHERE id = ?", id);
+            db.update("DELETE FROM menu_extras WHERE id = ?", id);
             response.put("success", true);
             response.put("message", "تم حذف الإضافة");
         } catch (Exception e) {
