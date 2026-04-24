@@ -4,6 +4,7 @@ package com.wasalni;
 // OrderController - إدارة الطلبات
 // يتعامل مع:
 // POST /api/orders              - إنشاء طلب جديد
+// GET  /api/orders/my           - طلبات المستخدم الحالي
 // GET  /api/orders/{id}         - تفاصيل طلب
 // GET  /api/orders/{id}/tracking- تتبع الطلب
 // POST /api/orders/{id}/review  - تقييم الطلب
@@ -64,20 +65,55 @@ public class OrderController {
                 return response;
             }
 
+            // ============================================
+            // معالجة العنوان: إذا لم يُرسل addressId أو كان 0
+            // نبحث عن عنوان مسجل للمستخدم، أو ننشئ واحداً افتراضياً
+            // ============================================
+            Integer finalAddressId = (addressId != null && addressId > 0) ? addressId : null;
+            if (finalAddressId == null) {
+                List<Map<String, Object>> userAddresses = db.queryForList(
+                    "SELECT id FROM addresses WHERE user_id = ? ORDER BY id ASC LIMIT 1", userId
+                );
+                if (!userAddresses.isEmpty()) {
+                    // استخدام أول عنوان موجود للمستخدم
+                    finalAddressId = ((Number) userAddresses.get(0).get("id")).intValue();
+                } else {
+                    // إنشاء عنوان افتراضي إذا لم يكن للمستخدم أي عنوان
+                    db.update(
+                        "INSERT INTO addresses (user_id, label, address_text) VALUES (?, ?, ?)",
+                        userId, "الموقع الافتراضي", "غير محدد"
+                    );
+                    Map<String, Object> newAddr = db.queryForMap(
+                        "SELECT id FROM addresses WHERE user_id = ? ORDER BY id DESC LIMIT 1", userId
+                    );
+                    finalAddressId = ((Number) newAddr.get("id")).intValue();
+                }
+            }
+
             // حساب مجموع المنتجات
             double subtotal = 0;
             for (Map<String, Object> item : items) {
                 Integer productId = (Integer) item.get("productId");
                 Integer quantity = (Integer) item.get("quantity");
 
-                // جلب سعر المنتج من قاعدة البيانات
-                Map<String, Object> product = db.queryForMap(
+                // جلب سعر المنتج من قاعدة البيانات (التحقق أن المنتج تابع لنفس المطعم)
+                List<Map<String, Object>> productList = db.queryForList(
                     "SELECT price FROM products WHERE id = ? AND restaurant_id = ?",
                     productId, restaurantId
                 );
 
-                double price = ((Number) product.get("price")).doubleValue();
+                // إذا المنتج غير موجود أو لا ينتمي لهذا المطعم، نتجاهله
+                if (productList.isEmpty()) continue;
+
+                double price = ((Number) productList.get(0).get("price")).doubleValue();
                 subtotal += price * quantity;
+            }
+
+            // التحقق أن هناك على الأقل منتج واحد صالح
+            if (subtotal == 0) {
+                response.put("success", false);
+                response.put("message", "لا توجد منتجات صالحة في الطلب");
+                return response;
             }
 
             // حساب رسوم التوصيل
@@ -113,11 +149,11 @@ public class OrderController {
             // حساب المبلغ النهائي
             double totalPrice = subtotal + deliveryFee - discount;
 
-            // إنشاء الطلب في قاعدة البيانات
+            // إنشاء الطلب في قاعدة البيانات (استخدام finalAddressId بدل addressId الأصلي)
             db.update(
                 "INSERT INTO orders (user_id, restaurant_id, address_id, coupon_id, subtotal, delivery_fee, discount, total_price, payment_method, notes) " +
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                userId, restaurantId, addressId, couponId, subtotal, deliveryFee, discount, totalPrice, paymentMethod, notes
+                userId, restaurantId, finalAddressId, couponId, subtotal, deliveryFee, discount, totalPrice, paymentMethod, notes
             );
 
             // جلب رقم الطلب الجديد
@@ -157,6 +193,59 @@ public class OrderController {
             response.put("orderId", orderId);
             response.put("totalPrice", totalPrice);
             response.put("estimatedTime", "25-35 دقيقة");
+
+        } catch (Exception e) {
+            response.put("success", false);
+            response.put("message", "حدث خطأ: " + e.getMessage());
+        }
+
+        return response;
+    }
+
+    // ============================================
+    // GET /api/orders/my
+    // كل طلبات المستخدم الحالي (يحتاج توكن)
+    // ============================================
+    @GetMapping("/my")
+    public Map<String, Object> getMyOrders(@RequestHeader("Authorization") String authHeader) {
+        Map<String, Object> response = new HashMap<>();
+
+        try {
+            String userId = getUserIdFromToken(authHeader);
+
+            // جلب كل طلبات المستخدم مع اسم المطعم
+            List<Map<String, Object>> orders = db.queryForList(
+                "SELECT o.id, o.status, o.total_price as total_amount, o.created_at, " +
+                "r.name as restaurant_name, r.image as restaurant_image " +
+                "FROM orders o " +
+                "JOIN restaurants r ON o.restaurant_id = r.id " +
+                "WHERE o.user_id = ? ORDER BY o.created_at DESC",
+                userId
+            );
+
+            // إضافة ملخص المنتجات لكل طلب
+            for (Map<String, Object> order : orders) {
+                Integer orderId = ((Number) order.get("id")).intValue();
+                List<Map<String, Object>> items = db.queryForList(
+                    "SELECT oi.quantity, p.name as product_name " +
+                    "FROM order_items oi " +
+                    "JOIN products p ON oi.product_id = p.id " +
+                    "WHERE oi.order_id = ?",
+                    orderId
+                );
+                // بناء ملخص نصي للمنتجات
+                StringBuilder summary = new StringBuilder();
+                for (int i = 0; i < items.size(); i++) {
+                    if (i > 0) summary.append("، ");
+                    summary.append(items.get(i).get("product_name"))
+                           .append(" ×")
+                           .append(items.get(i).get("quantity"));
+                }
+                order.put("items_summary", summary.toString());
+            }
+
+            response.put("success", true);
+            response.put("orders", orders);
 
         } catch (Exception e) {
             response.put("success", false);
