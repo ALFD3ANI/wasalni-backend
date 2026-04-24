@@ -672,12 +672,11 @@ public class RestaurantController {
                 response.put("message", "المنتج غير موجود");
                 return response;
             }
-            String name   = (String) data.get("name");
-            String nameEn = (String) data.get("name_en");
-            Double price  = data.get("price") != null ? ((Number) data.get("price")).doubleValue() : 0.0;
+            String name  = (String) data.get("name");
+            Double price = data.get("price") != null ? ((Number) data.get("price")).doubleValue() : 0.0;
             db.update(
-                "INSERT INTO product_extras (product_id, name, name_en, price) VALUES (?, ?, ?, ?)",
-                id, name, nameEn, price
+                "INSERT INTO product_extras (product_id, name, price) VALUES (?, ?, ?)",
+                id, name, price
             );
             response.put("success", true);
             response.put("message", "تم إضافة الإضافة بنجاح");
