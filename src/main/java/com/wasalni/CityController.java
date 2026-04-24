@@ -48,6 +48,17 @@ public class CityController {
         Map<String, Object> response = new HashMap<>();
 
         try {
+            db.execute(
+                "CREATE TABLE IF NOT EXISTS cities (" +
+                "id INT AUTO_INCREMENT PRIMARY KEY, " +
+                "name VARCHAR(100) NOT NULL, " +
+                "name_en VARCHAR(100), " +
+                "latitude DECIMAL(10,7), " +
+                "longitude DECIMAL(10,7), " +
+                "radius_km INT DEFAULT 30, " +
+                "is_active TINYINT DEFAULT 1, " +
+                "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
+            );
             List<Map<String, Object>> cities = db.queryForList(
                 "SELECT id, name, name_en, latitude, longitude, radius_km FROM cities WHERE is_active = 1 ORDER BY name"
             );
@@ -395,10 +406,40 @@ public class CityController {
         Map<String, Object> response = new HashMap<>();
 
         try {
+            db.execute(
+                "CREATE TABLE IF NOT EXISTS cities (" +
+                "id INT AUTO_INCREMENT PRIMARY KEY, " +
+                "name VARCHAR(100) NOT NULL, " +
+                "name_en VARCHAR(100), " +
+                "latitude DECIMAL(10,7), " +
+                "longitude DECIMAL(10,7), " +
+                "radius_km INT DEFAULT 30, " +
+                "is_active TINYINT DEFAULT 1, " +
+                "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
+            );
+            db.execute(
+                "CREATE TABLE IF NOT EXISTS join_requests (" +
+                "id INT AUTO_INCREMENT PRIMARY KEY, " +
+                "type VARCHAR(20) NOT NULL, " +
+                "name VARCHAR(100) NOT NULL, " +
+                "email VARCHAR(100), " +
+                "phone VARCHAR(20), " +
+                "city_id INT, " +
+                "password VARCHAR(255), " +
+                "description TEXT, " +
+                "address VARCHAR(255), " +
+                "image VARCHAR(500), " +
+                "commercial_reg VARCHAR(50), " +
+                "vehicle_type VARCHAR(50), " +
+                "vehicle_plate VARCHAR(20), " +
+                "status VARCHAR(20) DEFAULT 'pending', " +
+                "reject_reason TEXT, " +
+                "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
+            );
             List<Map<String, Object>> requests = db.queryForList(
-                "SELECT jr.*, c.name as city_name FROM join_requests jr " +
-                "LEFT JOIN cities c ON jr.city_id = c.id " +
-                "ORDER BY jr.created_at DESC"
+                "SELECT jr.*, " +
+                "(SELECT c.name FROM cities c WHERE c.id = jr.city_id LIMIT 1) as city_name " +
+                "FROM join_requests jr ORDER BY jr.created_at DESC"
             );
 
             response.put("success", true);
