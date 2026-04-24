@@ -385,14 +385,38 @@ public class RestaurantController {
         try {
             String restaurantId = getRestaurantIdFromToken(authHeader);
 
+            // جلب الطلبات مع تسمية total_price باسم total_amount لأن الـ frontend يقرأ total_amount
             List<Map<String, Object>> orders = db.queryForList(
-                "SELECT o.*, u.name as user_name, u.phone as user_phone " +
+                "SELECT o.id, o.status, o.payment_method, o.notes, o.created_at, " +
+                "o.subtotal, o.delivery_fee, o.discount, " +
+                "o.total_price as total_amount, " +
+                "u.name as user_name, u.phone as user_phone " +
                 "FROM orders o " +
                 "JOIN users u ON o.user_id = u.id " +
                 "WHERE o.restaurant_id = ? " +
                 "ORDER BY o.created_at DESC",
                 restaurantId
             );
+
+            // إضافة ملخص المنتجات لكل طلب
+            for (Map<String, Object> order : orders) {
+                Integer orderId = ((Number) order.get("id")).intValue();
+                List<Map<String, Object>> items = db.queryForList(
+                    "SELECT oi.quantity, p.name as product_name " +
+                    "FROM order_items oi " +
+                    "JOIN products p ON oi.product_id = p.id " +
+                    "WHERE oi.order_id = ?",
+                    orderId
+                );
+                StringBuilder summary = new StringBuilder();
+                for (int i = 0; i < items.size(); i++) {
+                    if (i > 0) summary.append("، ");
+                    summary.append(items.get(i).get("product_name"))
+                           .append(" ×")
+                           .append(items.get(i).get("quantity"));
+                }
+                order.put("items_summary", summary.toString());
+            }
 
             response.put("success", true);
             response.put("orders", orders);
