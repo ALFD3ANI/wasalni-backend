@@ -331,6 +331,88 @@ public class UserController {
     }
 
     // ============================================
+    // GET /api/user/gamification
+    // بيانات المستوى والشارات للزبون
+    // ============================================
+    @GetMapping("/gamification")
+    public Map<String, Object> getGamification(@RequestHeader("Authorization") String authHeader) {
+        Map<String, Object> response = new HashMap<>();
+        try {
+            String userId = getUserIdFromToken(authHeader);
+
+            // جلب النقاط وعدد الطلبات المكتملة
+            Map<String, Object> user = db.queryForMap(
+                "SELECT u.loyalty_points, " +
+                "(SELECT COUNT(*) FROM orders WHERE user_id = u.id AND status = 'delivered') AS total_orders " +
+                "FROM users u WHERE u.id = ?", userId);
+
+            long points      = ((Number) user.get("loyalty_points")).longValue();
+            long totalOrders = ((Number) user.get("total_orders")).longValue();
+
+            // تحديد المستوى
+            String level, levelAr, levelEmoji, nextLevel;
+            long   pointsToNext, levelMin, levelMax;
+
+            if (points >= 1000) {
+                level = "platinum"; levelAr = "بلاتيني"; levelEmoji = "💎";
+                pointsToNext = 0; nextLevel = "الأعلى"; levelMin = 1000; levelMax = 1000;
+            } else if (points >= 500) {
+                level = "gold"; levelAr = "ذهبي"; levelEmoji = "🥇";
+                pointsToNext = 1000 - points; nextLevel = "بلاتيني 💎"; levelMin = 500; levelMax = 1000;
+            } else if (points >= 100) {
+                level = "silver"; levelAr = "فضي"; levelEmoji = "🥈";
+                pointsToNext = 500 - points; nextLevel = "ذهبي 🥇"; levelMin = 100; levelMax = 500;
+            } else {
+                level = "bronze"; levelAr = "برونزي"; levelEmoji = "🥉";
+                pointsToNext = 100 - points; nextLevel = "فضي 🥈"; levelMin = 0; levelMax = 100;
+            }
+
+            // نسبة التقدم
+            long progressPct = level.equals("platinum") ? 100
+                : Math.min(100, (points - levelMin) * 100 / (levelMax - levelMin));
+
+            // الشارات
+            List<Map<String, Object>> badges = new ArrayList<>();
+            if (totalOrders >= 1) {
+                Map<String, Object> b = new HashMap<>();
+                b.put("icon", "🛵"); b.put("name", "أول طلب"); b.put("desc", "أكملت أول طلب!"); badges.add(b);
+            }
+            if (totalOrders >= 5) {
+                Map<String, Object> b = new HashMap<>();
+                b.put("icon", "⭐"); b.put("name", "زبون نشط"); b.put("desc", "٥ طلبات مكتملة"); badges.add(b);
+            }
+            if (totalOrders >= 10) {
+                Map<String, Object> b = new HashMap<>();
+                b.put("icon", "🌟"); b.put("name", "هاوي الطعام"); b.put("desc", "١٠ طلبات مكتملة"); badges.add(b);
+            }
+            if (points >= 100) {
+                Map<String, Object> b = new HashMap<>();
+                b.put("icon", "💰"); b.put("name", "جامع النقاط"); b.put("desc", "١٠٠ نقطة أو أكثر"); badges.add(b);
+            }
+            if (totalOrders >= 20) {
+                Map<String, Object> b = new HashMap<>();
+                b.put("icon", "👑"); b.put("name", "VIP"); b.put("desc", "٢٠ طلباً مكتملاً"); badges.add(b);
+            }
+
+            response.put("success", true);
+            response.put("points", points);
+            response.put("totalOrders", totalOrders);
+            response.put("level", level);
+            response.put("levelAr", levelAr);
+            response.put("levelEmoji", levelEmoji);
+            response.put("pointsToNext", pointsToNext);
+            response.put("nextLevel", nextLevel);
+            response.put("progressPct", progressPct);
+            response.put("badges", badges);
+
+        } catch (Exception e) {
+            response.put("success", false);
+            response.put("message", "حدث خطأ: " + e.getMessage());
+        }
+        return response;
+    }
+
+    // ============================================
     // DELETE /api/user/favorites/{id}
     // حذف مطعم من المفضلة
     // ============================================

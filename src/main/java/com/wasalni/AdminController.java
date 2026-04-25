@@ -968,6 +968,47 @@ public class AdminController {
     }
 
     // ============================================
+    // GET /api/admin/gamification-stats
+    // إحصائيات نظام المكافآت والمستويات
+    // ============================================
+    @GetMapping("/gamification-stats")
+    public Map<String, Object> getGamificationStats(@RequestHeader("Authorization") String authHeader) {
+        Map<String, Object> response = new HashMap<>();
+        try {
+            // توزيع المستويات
+            Long bronze   = db.queryForObject("SELECT COUNT(*) FROM users WHERE loyalty_points < 100", Long.class);
+            Long silver   = db.queryForObject("SELECT COUNT(*) FROM users WHERE loyalty_points >= 100 AND loyalty_points < 500", Long.class);
+            Long gold     = db.queryForObject("SELECT COUNT(*) FROM users WHERE loyalty_points >= 500 AND loyalty_points < 1000", Long.class);
+            Long platinum = db.queryForObject("SELECT COUNT(*) FROM users WHERE loyalty_points >= 1000", Long.class);
+
+            Map<String, Object> levelDist = new HashMap<>();
+            levelDist.put("bronze", bronze != null ? bronze : 0);
+            levelDist.put("silver", silver != null ? silver : 0);
+            levelDist.put("gold",   gold   != null ? gold   : 0);
+            levelDist.put("platinum", platinum != null ? platinum : 0);
+
+            // أفضل 10 زبائن بالنقاط
+            List<Map<String, Object>> topUsers = db.queryForList(
+                "SELECT name, loyalty_points, " +
+                "(SELECT COUNT(*) FROM orders WHERE user_id = users.id AND status='delivered') AS orders " +
+                "FROM users WHERE loyalty_points > 0 ORDER BY loyalty_points DESC LIMIT 10");
+
+            // إجمالي النقاط في النظام
+            Long totalPoints = db.queryForObject("SELECT COALESCE(SUM(loyalty_points),0) FROM users", Long.class);
+
+            response.put("success", true);
+            response.put("levelDist", levelDist);
+            response.put("topUsers", topUsers);
+            response.put("totalPoints", totalPoints != null ? totalPoints : 0);
+
+        } catch (Exception e) {
+            response.put("success", false);
+            response.put("message", "حدث خطأ: " + e.getMessage());
+        }
+        return response;
+    }
+
+    // ============================================
     // DELETE /api/admin/products/{id}
     // حذف منتج (الأدمن)
     // ============================================
