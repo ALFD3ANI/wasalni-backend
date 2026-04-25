@@ -198,13 +198,19 @@ public class RestaurantController {
         try {
             String restaurantId = getRestaurantIdFromToken(authHeader);
 
-            String name = (String) data.get("name");
+            String name        = (String) data.get("name");
             String description = (String) data.get("description");
-            String phone = (String) data.get("phone");
-            String address = (String) data.get("address");
-            String image = (String) data.get("image");
-            Integer deliveryTime = (Integer) data.get("deliveryTime");
-            Double minOrder = data.get("minOrder") != null ? ((Number) data.get("minOrder")).doubleValue() : null;
+            String phone       = (String) data.get("phone");
+            String address     = (String) data.get("address");
+            String image       = (String) data.get("image");       // شعار المطعم
+            String coverImage  = (String) data.get("coverImage");  // صورة الغلاف
+            Integer deliveryTime = data.get("deliveryTime") != null ? ((Number) data.get("deliveryTime")).intValue() : null;
+            Double minOrder      = data.get("minOrder")     != null ? ((Number) data.get("minOrder")).doubleValue()    : null;
+
+            // إضافة عمود cover_image تلقائياً إن لم يكن موجوداً
+            try {
+                db.execute("ALTER TABLE restaurants ADD COLUMN cover_image VARCHAR(500) DEFAULT NULL");
+            } catch (Exception ignored) {}
 
             db.update(
                 "UPDATE restaurants SET " +
@@ -213,10 +219,11 @@ public class RestaurantController {
                 "phone = COALESCE(?, phone), " +
                 "address = COALESCE(?, address), " +
                 "image = COALESCE(?, image), " +
+                "cover_image = COALESCE(?, cover_image), " +
                 "delivery_time = COALESCE(?, delivery_time), " +
                 "min_order = COALESCE(?, min_order) " +
                 "WHERE id = ?",
-                name, description, phone, address, image, deliveryTime, minOrder, restaurantId
+                name, description, phone, address, image, coverImage, deliveryTime, minOrder, restaurantId
             );
 
             response.put("success", true);
