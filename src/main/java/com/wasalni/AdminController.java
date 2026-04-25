@@ -1071,4 +1071,174 @@ public class AdminController {
         }
         return response;
     }
+
+    // ============================================
+    // PUT /api/admin/restaurants/{id}
+    // تعديل بيانات مطعم كاملة
+    // ============================================
+    @PutMapping("/restaurants/{id}")
+    public Map<String, Object> updateRestaurant(
+            @RequestHeader("Authorization") String authHeader,
+            @PathVariable int id,
+            @RequestBody Map<String, Object> data) {
+        Map<String, Object> response = new HashMap<>();
+        try {
+            String name         = (String) data.get("name");
+            String phone        = (String) data.get("phone");
+            String address      = (String) data.get("address");
+            String deliveryTime = (String) data.get("deliveryTime");
+            Object feeObj       = data.get("deliveryFee");
+            Double deliveryFee  = feeObj != null ? ((Number) feeObj).doubleValue() : null;
+
+            db.update(
+                "UPDATE restaurants SET " +
+                "name          = COALESCE(?, name), " +
+                "phone         = COALESCE(?, phone), " +
+                "address       = COALESCE(?, address), " +
+                "delivery_time = COALESCE(?, delivery_time), " +
+                "delivery_fee  = COALESCE(?, delivery_fee) " +
+                "WHERE id = ?",
+                name, phone, address, deliveryTime, deliveryFee, id
+            );
+
+            db.update(
+                "INSERT INTO admin_logs (admin_name, action, details) VALUES (?, ?, ?)",
+                "admin", "تعديل مطعم", "رقم المطعم: " + id
+            );
+
+            response.put("success", true);
+            response.put("message", "تم تحديث بيانات المطعم");
+        } catch (Exception e) {
+            response.put("success", false);
+            response.put("message", "حدث خطأ: " + e.getMessage());
+        }
+        return response;
+    }
+
+    // ============================================
+    // GET /api/admin/restaurants/{id}/orders
+    // طلبات مطعم معين
+    // ============================================
+    @GetMapping("/restaurants/{id}/orders")
+    public Map<String, Object> getRestaurantOrders(
+            @RequestHeader("Authorization") String authHeader,
+            @PathVariable int id) {
+        Map<String, Object> response = new HashMap<>();
+        try {
+            List<Map<String, Object>> orders = db.queryForList(
+                "SELECT o.id, o.status, o.total_price, o.created_at, " +
+                "u.name as user_name, d.name as driver_name " +
+                "FROM orders o " +
+                "JOIN users u ON o.user_id = u.id " +
+                "LEFT JOIN drivers d ON o.driver_id = d.id " +
+                "WHERE o.restaurant_id = ? " +
+                "ORDER BY o.created_at DESC LIMIT 50",
+                id
+            );
+            response.put("success", true);
+            response.put("orders", orders);
+        } catch (Exception e) {
+            response.put("success", false);
+            response.put("message", "حدث خطأ: " + e.getMessage());
+        }
+        return response;
+    }
+
+    // ============================================
+    // PUT /api/admin/drivers/{id}
+    // تعديل بيانات سائق
+    // ============================================
+    @PutMapping("/drivers/{id}")
+    public Map<String, Object> updateDriver(
+            @RequestHeader("Authorization") String authHeader,
+            @PathVariable int id,
+            @RequestBody Map<String, Object> data) {
+        Map<String, Object> response = new HashMap<>();
+        try {
+            String name         = (String) data.get("name");
+            String phone        = (String) data.get("phone");
+            String vehicleType  = (String) data.get("vehicleType");
+            String vehiclePlate = (String) data.get("vehiclePlate");
+
+            db.update(
+                "UPDATE drivers SET " +
+                "name          = COALESCE(?, name), " +
+                "phone         = COALESCE(?, phone), " +
+                "vehicle_type  = COALESCE(?, vehicle_type), " +
+                "vehicle_plate = COALESCE(?, vehicle_plate) " +
+                "WHERE id = ?",
+                name, phone, vehicleType, vehiclePlate, id
+            );
+
+            db.update(
+                "INSERT INTO admin_logs (admin_name, action, details) VALUES (?, ?, ?)",
+                "admin", "تعديل سائق", "رقم السائق: " + id
+            );
+
+            response.put("success", true);
+            response.put("message", "تم تحديث بيانات السائق");
+        } catch (Exception e) {
+            response.put("success", false);
+            response.put("message", "حدث خطأ: " + e.getMessage());
+        }
+        return response;
+    }
+
+    // ============================================
+    // PUT /api/admin/drivers/{id}/block
+    // حظر أو فك حظر سائق
+    // ============================================
+    @PutMapping("/drivers/{id}/block")
+    public Map<String, Object> toggleDriverBlock(
+            @RequestHeader("Authorization") String authHeader,
+            @PathVariable int id,
+            @RequestBody Map<String, Object> data) {
+        Map<String, Object> response = new HashMap<>();
+        try {
+            Boolean isBlocked = (Boolean) data.get("isBlocked");
+
+            db.update("UPDATE drivers SET is_blocked = ? WHERE id = ?", isBlocked, id);
+
+            db.update(
+                "INSERT INTO admin_logs (admin_name, action, details) VALUES (?, ?, ?)",
+                "admin", isBlocked ? "حظر سائق" : "فك حظر سائق", "رقم السائق: " + id
+            );
+
+            response.put("success", true);
+            response.put("message", isBlocked ? "تم حظر السائق" : "تم فك الحظر عن السائق");
+        } catch (Exception e) {
+            response.put("success", false);
+            response.put("message", "حدث خطأ: " + e.getMessage());
+        }
+        return response;
+    }
+
+    // ============================================
+    // GET /api/admin/drivers/{id}/orders
+    // سجل توصيلات سائق معين
+    // ============================================
+    @GetMapping("/drivers/{id}/orders")
+    public Map<String, Object> getDriverOrders(
+            @RequestHeader("Authorization") String authHeader,
+            @PathVariable int id) {
+        Map<String, Object> response = new HashMap<>();
+        try {
+            List<Map<String, Object>> orders = db.queryForList(
+                "SELECT o.id, o.status, o.total_price, o.delivery_fee, o.created_at, " +
+                "r.name as restaurant_name, u.name as user_name " +
+                "FROM orders o " +
+                "JOIN restaurants r ON o.restaurant_id = r.id " +
+                "JOIN users u ON o.user_id = u.id " +
+                "WHERE o.driver_id = ? " +
+                "ORDER BY o.created_at DESC LIMIT 50",
+                id
+            );
+            response.put("success", true);
+            response.put("orders", orders);
+        } catch (Exception e) {
+            response.put("success", false);
+            response.put("message", "حدث خطأ: " + e.getMessage());
+        }
+        return response;
+    }
 }
