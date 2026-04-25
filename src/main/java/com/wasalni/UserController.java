@@ -256,6 +256,35 @@ public class UserController {
     }
 
     // ============================================
+    // GET /api/orders/{id}/status
+    // حالة طلب محدد مع معلومات السائق
+    // ============================================
+    @GetMapping("/api/orders/{id}/status")
+    public Map<String, Object> getOrderStatus(
+            @PathVariable int id,
+            @RequestHeader("Authorization") String authHeader) {
+        Map<String, Object> response = new HashMap<>();
+        try {
+            Map<String, Object> order = db.queryForMap(
+                "SELECT o.id, o.status, o.total_price, o.created_at, " +
+                "r.name as restaurant_name, " +
+                "d.name as driver_name, d.phone as driver_phone, " +
+                "d.vehicle_type, d.vehicle_plate, d.rating as driver_rating " +
+                "FROM orders o " +
+                "JOIN restaurants r ON o.restaurant_id = r.id " +
+                "LEFT JOIN drivers d ON o.driver_id = d.id " +
+                "WHERE o.id = ?", id
+            );
+            response.put("success", true);
+            response.put("order", order);
+        } catch (Exception e) {
+            response.put("success", false);
+            response.put("message", "حدث خطأ: " + e.getMessage());
+        }
+        return response;
+    }
+
+    // ============================================
     // GET /api/user/favorites
     // المطاعم المفضلة للزبون
     // ============================================
