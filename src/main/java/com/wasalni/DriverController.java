@@ -155,22 +155,23 @@ public class DriverController {
             Double latitude = ((Number) data.get("latitude")).doubleValue();
             Double longitude = ((Number) data.get("longitude")).doubleValue();
 
-            // تحديث الموقع إذا موجود، وإلا إضافة جديد
-            List<Map<String, Object>> existing = db.queryForList(
-                "SELECT id FROM driver_locations WHERE driver_id = ?", driverId
+            // إنشاء الجدول إذا لم يكن موجوداً مع updated_at
+            db.execute(
+                "CREATE TABLE IF NOT EXISTS driver_locations (" +
+                "id INT AUTO_INCREMENT PRIMARY KEY, " +
+                "driver_id INT NOT NULL, " +
+                "latitude DECIMAL(10,7), " +
+                "longitude DECIMAL(10,7), " +
+                "updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, " +
+                "UNIQUE KEY uk_driver (driver_id))"
             );
 
-            if (existing.isEmpty()) {
-                db.update(
-                    "INSERT INTO driver_locations (driver_id, latitude, longitude) VALUES (?, ?, ?)",
-                    driverId, latitude, longitude
-                );
-            } else {
-                db.update(
-                    "UPDATE driver_locations SET latitude = ?, longitude = ? WHERE driver_id = ?",
-                    latitude, longitude, driverId
-                );
-            }
+            // INSERT أو UPDATE في سطر واحد
+            db.update(
+                "INSERT INTO driver_locations (driver_id, latitude, longitude) VALUES (?, ?, ?) " +
+                "ON DUPLICATE KEY UPDATE latitude = VALUES(latitude), longitude = VALUES(longitude)",
+                driverId, latitude, longitude
+            );
 
             response.put("success", true);
             response.put("message", "تم تحديث الموقع");
@@ -349,6 +350,34 @@ public class DriverController {
 
         return response;
     }
+    // ============================================
+    // GET /api/driver/my-orders
+    // الطلبات المعيّنة على هذا السائق (نشطة)
+    // ============================================
+    @GetMapping("/my-orders")
+    public Map<String, Object> getMyOrders(@RequestHeader("Authorization") String authHeader) {
+        Map<String, Object> response = new HashMap<>();
+        try {
+            String driverId = getDriverIdFromToken(authHeader);
+            List<Map<String, Object>> orders = db.queryForList(
+                "SELECT o.*, r.name as restaurant_name, r.address as restaurant_address, " +
+                "u.name as user_name, u.phone as user_phone " +
+                "FROM orders o " +
+                "JOIN restaurants r ON o.restaurant_id = r.id " +
+                "JOIN users u ON o.user_id = u.id " +
+                "WHERE o.driver_id = ? AND o.status NOT IN ('delivered','cancelled') " +
+                "ORDER BY o.created_at DESC",
+                driverId
+            );
+            response.put("success", true);
+            response.put("orders", orders);
+        } catch (Exception e) {
+            response.put("success", false);
+            response.put("message", "حدث خطأ: " + e.getMessage());
+        }
+        return response;
+    }
+
     // ============================================
     // GET /api/driver/track/{orderId}
     // جلب موقع السائق لطلب معين — للزبون

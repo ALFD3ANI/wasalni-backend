@@ -877,4 +877,71 @@ public class AdminController {
 
         return response;
     }
+
+    // ============================================
+    // GET /api/admin/products
+    // كل المنتجات مع اسم المطعم
+    // ============================================
+    @GetMapping("/products")
+    public Map<String, Object> getAllProducts() {
+        Map<String, Object> response = new HashMap<>();
+        try {
+            List<Map<String, Object>> products = db.queryForList(
+                "SELECT p.*, r.name as restaurant_name FROM products p " +
+                "LEFT JOIN restaurants r ON p.restaurant_id = r.id " +
+                "ORDER BY r.name, p.name"
+            );
+            response.put("success", true);
+            response.put("products", products);
+        } catch (Exception e) {
+            response.put("success", false);
+            response.put("message", "حدث خطأ: " + e.getMessage());
+        }
+        return response;
+    }
+
+    // ============================================
+    // POST /api/admin/products
+    // إضافة منتج لأي مطعم (الأدمن)
+    // ============================================
+    @PostMapping("/products")
+    public Map<String, Object> addProductAdmin(@RequestBody Map<String, Object> data) {
+        Map<String, Object> response = new HashMap<>();
+        try {
+            int restaurantId = ((Number) data.get("restaurant_id")).intValue();
+            String name = (String) data.get("name");
+            String description = (String) data.get("description");
+            double price = ((Number) data.get("price")).doubleValue();
+            double oldPrice = data.get("old_price") != null ? ((Number) data.get("old_price")).doubleValue() : 0;
+
+            db.update(
+                "INSERT INTO products (restaurant_id, name, description, price, old_price) VALUES (?,?,?,?,?)",
+                restaurantId, name, description, price, oldPrice
+            );
+            response.put("success", true);
+            response.put("message", "تم إضافة المنتج بنجاح");
+        } catch (Exception e) {
+            response.put("success", false);
+            response.put("message", "حدث خطأ: " + e.getMessage());
+        }
+        return response;
+    }
+
+    // ============================================
+    // DELETE /api/admin/products/{id}
+    // حذف منتج (الأدمن)
+    // ============================================
+    @DeleteMapping("/products/{id}")
+    public Map<String, Object> deleteProductAdmin(@PathVariable int id) {
+        Map<String, Object> response = new HashMap<>();
+        try {
+            db.update("DELETE FROM products WHERE id = ?", id);
+            response.put("success", true);
+            response.put("message", "تم حذف المنتج");
+        } catch (Exception e) {
+            response.put("success", false);
+            response.put("message", "حدث خطأ: " + e.getMessage());
+        }
+        return response;
+    }
 }

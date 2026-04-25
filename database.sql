@@ -157,6 +157,7 @@ CREATE TABLE products (
     name VARCHAR(255) NOT NULL,             -- اسم المنتج
     description TEXT,                       -- وصف المنتج
     price DECIMAL(10,2) NOT NULL,           -- السعر
+    old_price DECIMAL(10,2) DEFAULT 0,      -- السعر قبل الخصم
     image VARCHAR(500),                     -- صورة المنتج
     category VARCHAR(100),                  -- تصنيف داخل المطعم
     is_available BOOLEAN DEFAULT TRUE,      -- هل المنتج متاح؟

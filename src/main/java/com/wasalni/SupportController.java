@@ -31,6 +31,13 @@ public class SupportController {
     public Map<String, Object> createTicket(@RequestBody Map<String, Object> body) {
         Map<String, Object> response = new HashMap<>();
         try {
+            db.execute(
+                "CREATE TABLE IF NOT EXISTS support_tickets (" +
+                "id INT AUTO_INCREMENT PRIMARY KEY, " +
+                "user_id INT, subject VARCHAR(255), message TEXT, " +
+                "admin_reply TEXT, status ENUM('open','replied','closed') DEFAULT 'open', " +
+                "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP)"
+            );
             db.update(
                 "INSERT INTO support_tickets (user_id, subject, message, status) VALUES (?,?,?,'open')",
                 body.get("user_id"),
@@ -75,6 +82,13 @@ public class SupportController {
     public Map<String, Object> getAllTickets() {
         Map<String, Object> response = new HashMap<>();
         try {
+            db.execute(
+                "CREATE TABLE IF NOT EXISTS support_tickets (" +
+                "id INT AUTO_INCREMENT PRIMARY KEY, " +
+                "user_id INT, subject VARCHAR(255), message TEXT, " +
+                "admin_reply TEXT, status ENUM('open','replied','closed') DEFAULT 'open', " +
+                "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP)"
+            );
             List<Map<String, Object>> tickets = db.queryForList(
                 "SELECT t.*, u.name as user_name, u.phone as user_phone " +
                 "FROM support_tickets t " +
@@ -143,6 +157,13 @@ public class SupportController {
     public Map<String, Object> getStats() {
         Map<String, Object> response = new HashMap<>();
         try {
+            db.execute(
+                "CREATE TABLE IF NOT EXISTS support_tickets (" +
+                "id INT AUTO_INCREMENT PRIMARY KEY, " +
+                "user_id INT, subject VARCHAR(255), message TEXT, " +
+                "admin_reply TEXT, status ENUM('open','replied','closed') DEFAULT 'open', " +
+                "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP)"
+            );
             // عدد التذاكر المفتوحة
             int open = db.queryForObject(
                 "SELECT COUNT(*) FROM support_tickets WHERE status = 'open'",

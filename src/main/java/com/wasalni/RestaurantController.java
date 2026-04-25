@@ -315,6 +315,7 @@ public class RestaurantController {
             String name = (String) data.get("name");
             String description = (String) data.get("description");
             Double price = data.get("price") != null ? ((Number) data.get("price")).doubleValue() : null;
+            Double oldPrice = data.get("old_price") != null ? ((Number) data.get("old_price")).doubleValue() : null;
             String image = (String) data.get("image");
             Boolean isAvailable = (Boolean) data.get("isAvailable");
 
@@ -323,10 +324,11 @@ public class RestaurantController {
                 "name = COALESCE(?, name), " +
                 "description = COALESCE(?, description), " +
                 "price = COALESCE(?, price), " +
+                "old_price = COALESCE(?, old_price), " +
                 "image = COALESCE(?, image), " +
                 "is_available = COALESCE(?, is_available) " +
                 "WHERE id = ? AND restaurant_id = ?",
-                name, description, price, image, isAvailable, id, restaurantId
+                name, description, price, oldPrice, image, isAvailable, id, restaurantId
             );
 
             response.put("success", true);

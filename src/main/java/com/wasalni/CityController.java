@@ -59,6 +59,27 @@ public class CityController {
                 "is_active TINYINT DEFAULT 1, " +
                 "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
             );
+            // بذر المدن الافتراضية إذا كانت الجدول فارغاً
+            int cityCount = db.queryForObject("SELECT COUNT(*) FROM cities", Integer.class);
+            if (cityCount == 0) {
+                String[][] seedCities = {
+                    {"الرياض", "Riyadh", "24.7136", "46.6753"},
+                    {"جدة", "Jeddah", "21.4858", "39.1925"},
+                    {"مكة المكرمة", "Mecca", "21.3891", "39.8579"},
+                    {"المدينة المنورة", "Medina", "24.5247", "39.5692"},
+                    {"الدمام", "Dammam", "26.4207", "50.0888"},
+                    {"الخبر", "Khobar", "26.2172", "50.1971"},
+                    {"الطائف", "Taif", "21.2854", "40.4150"},
+                    {"تبوك", "Tabuk", "28.3998", "36.5715"},
+                    {"أبها", "Abha", "18.2164", "42.5053"},
+                    {"القصيم", "Qassim", "26.3260", "43.9750"}
+                };
+                for (String[] c : seedCities) {
+                    db.update("INSERT INTO cities (name, name_en, latitude, longitude, is_active) VALUES (?,?,?,?,1)",
+                        c[0], c[1], c[2], c[3]);
+                }
+            }
+
             List<Map<String, Object>> cities = db.queryForList(
                 "SELECT id, name, name_en, latitude, longitude, radius_km FROM cities WHERE is_active = 1 ORDER BY name"
             );
