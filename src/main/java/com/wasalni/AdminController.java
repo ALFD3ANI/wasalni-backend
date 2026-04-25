@@ -453,6 +453,52 @@ public class AdminController {
     }
 
     // ============================================
+    // PUT /api/admin/orders/{id}/status
+    // تحديث حالة الطلب وتعيين سائق
+    // ============================================
+    @PutMapping("/orders/{id}/status")
+    public Map<String, Object> updateOrderStatus(
+            @PathVariable int id,
+            @RequestBody Map<String, Object> data,
+            @RequestHeader("Authorization") String authHeader) {
+        Map<String, Object> response = new HashMap<>();
+        try {
+            String status   = (String) data.get("status");
+            Object driverIdObj = data.get("driverId");
+
+            if (driverIdObj != null && !driverIdObj.toString().isBlank() && !driverIdObj.toString().equals("null")) {
+                int driverId = Integer.parseInt(driverIdObj.toString());
+                db.update("UPDATE orders SET status = ?, driver_id = ? WHERE id = ?", status, driverId, id);
+                db.update("UPDATE drivers SET is_available = 0 WHERE id = ?", driverId);
+            } else {
+                db.update("UPDATE orders SET status = ? WHERE id = ?", status, id);
+            }
+
+            // عند التوصيل: زيادة عداد التوصيلات للسائق
+            if ("delivered".equals(status)) {
+                db.update(
+                    "UPDATE drivers SET total_deliveries = total_deliveries + 1, is_available = 1 " +
+                    "WHERE id = (SELECT driver_id FROM (SELECT driver_id FROM orders WHERE id = ?) AS t)",
+                    id
+                );
+                // إضافة نقاط ولاء للمستخدم
+                db.update(
+                    "UPDATE users SET loyalty_points = loyalty_points + 10 " +
+                    "WHERE id = (SELECT user_id FROM orders WHERE id = ?)",
+                    id
+                );
+            }
+
+            response.put("success", true);
+            response.put("message", "تم تحديث حالة الطلب");
+        } catch (Exception e) {
+            response.put("success", false);
+            response.put("message", "حدث خطأ: " + e.getMessage());
+        }
+        return response;
+    }
+
+    // ============================================
     // GET /api/admin/coupons
     // عرض كل الكوبونات
     // ============================================
