@@ -53,7 +53,7 @@ public class AdminController {
 
     // ============================================
     // POST /api/admin/login
-    // تسجيل دخول الأدمن
+    // تسجيل دخول الأدمن — يتحقق من admin_users أولاً ثم الحساب الثابت
     // ============================================
     @PostMapping("/login")
     public Map<String, Object> login(@RequestBody Map<String, Object> data) {
@@ -63,22 +63,71 @@ public class AdminController {
             String username = (String) data.get("username");
             String password = (String) data.get("password");
 
-            // التحقق من بيانات الأدمن
+            // إنشاء جدول admin_users إذا لم يكن موجوداً
+            db.execute(
+                "CREATE TABLE IF NOT EXISTS admin_users (" +
+                "id INT AUTO_INCREMENT PRIMARY KEY, " +
+                "name VARCHAR(100) NOT NULL, " +
+                "username VARCHAR(50) UNIQUE NOT NULL, " +
+                "password VARCHAR(255) NOT NULL, " +
+                "role VARCHAR(20) DEFAULT 'admin', " +
+                "description VARCHAR(200) DEFAULT NULL, " +
+                "is_active TINYINT DEFAULT 1, " +
+                "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
+            );
+            // إضافة عمود description إذا لم يكن موجوداً
+            try { db.execute("ALTER TABLE admin_users ADD COLUMN description VARCHAR(200) DEFAULT NULL"); } catch (Exception ignored) {}
+
+            // بذر حسابات تجريبية إذا كان الجدول فارغاً
+            Long tableCount = db.queryForObject("SELECT COUNT(*) FROM admin_users", Long.class);
+            if (tableCount != null && tableCount == 0) {
+                db.update("INSERT INTO admin_users (name, username, password, role, description) VALUES (?,?,?,?,?)",
+                    "فريق الدعم", "support_team", passwordEncoder.encode("support123"), "support", "دعم فني الرياض");
+                db.update("INSERT INTO admin_users (name, username, password, role, description) VALUES (?,?,?,?,?)",
+                    "مشاهد التقارير", "viewer_test", passwordEncoder.encode("viewer123"), "viewer", "قسم المالية");
+            }
+
+            // البحث في جدول admin_users أولاً
+            List<Map<String, Object>> admins = db.queryForList(
+                "SELECT * FROM admin_users WHERE username = ? AND is_active = 1 LIMIT 1", username);
+
+            if (!admins.isEmpty()) {
+                Map<String, Object> admin = admins.get(0);
+                String storedHash = (String) admin.get("password");
+                if (!passwordEncoder.matches(password, storedHash)) {
+                    response.put("success", false);
+                    response.put("message", "كلمة المرور غير صحيحة");
+                    return response;
+                }
+                String role = (String) admin.get("role");
+                String token = jwtUtil.generateToken(username, "admin");
+                response.put("success", true);
+                response.put("message", "مرحباً بك في لوحة التحكم");
+                response.put("token", token);
+                response.put("id", admin.get("id"));
+                response.put("name", admin.get("name"));
+                response.put("role", "admin");
+                response.put("adminRole", role);
+                response.put("description", admin.get("description"));
+                return response;
+            }
+
+            // الرجوع للحساب الثابت (SuperAdmin)
             if (!ADMIN_USERNAME.equals(username) || !ADMIN_PASSWORD.equals(password)) {
                 response.put("success", false);
                 response.put("message", "اسم المستخدم أو كلمة المرور غير صحيحة");
                 return response;
             }
 
-            // إنشاء توكن للأدمن
             String token = jwtUtil.generateToken("admin", "admin");
-
             response.put("success", true);
             response.put("message", "مرحباً بك في لوحة التحكم");
             response.put("token", token);
-            response.put("id", 1);
+            response.put("id", 0);
             response.put("name", "Bader AL-anazi");
             response.put("role", "admin");
+            response.put("adminRole", "superadmin");
+            response.put("description", "مدير النظام الأعلى");
 
         } catch (Exception e) {
             response.put("success", false);
@@ -715,19 +764,8 @@ public class AdminController {
     public Map<String, Object> getAdminUsers(@RequestHeader("Authorization") String authHeader) {
         Map<String, Object> response = new HashMap<>();
         try {
-            // إنشاء الجدول إذا لم يكن موجوداً
-            db.execute(
-                "CREATE TABLE IF NOT EXISTS admin_users (" +
-                "id INT AUTO_INCREMENT PRIMARY KEY, " +
-                "name VARCHAR(100) NOT NULL, " +
-                "username VARCHAR(50) UNIQUE NOT NULL, " +
-                "password VARCHAR(255) NOT NULL, " +
-                "role VARCHAR(20) DEFAULT 'admin', " +
-                "is_active TINYINT DEFAULT 1, " +
-                "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
-            );
             List<Map<String, Object>> admins = db.queryForList(
-                "SELECT id, name, username, role, is_active, created_at FROM admin_users ORDER BY created_at DESC"
+                "SELECT id, name, username, role, description, is_active, created_at FROM admin_users ORDER BY created_at DESC"
             );
             response.put("success", true);
             response.put("admins", admins);
@@ -748,15 +786,16 @@ public class AdminController {
             @RequestBody Map<String, Object> data) {
         Map<String, Object> response = new HashMap<>();
         try {
-            String name     = (String) data.get("name");
-            String username = (String) data.get("username");
-            String password = (String) data.get("password");
-            String role     = data.get("role") != null ? (String) data.get("role") : "admin";
+            String name        = (String) data.get("name");
+            String username    = (String) data.get("username");
+            String password    = (String) data.get("password");
+            String role        = data.get("role") != null ? (String) data.get("role") : "admin";
+            String description = data.get("description") != null ? (String) data.get("description") : null;
 
             String hashed = passwordEncoder.encode(password);
             db.update(
-                "INSERT INTO admin_users (name, username, password, role) VALUES (?, ?, ?, ?)",
-                name, username, hashed, role
+                "INSERT INTO admin_users (name, username, password, role, description) VALUES (?, ?, ?, ?, ?)",
+                name, username, hashed, role, description
             );
             db.update(
                 "INSERT INTO admin_logs (admin_name, action, details) VALUES (?, ?, ?)",
@@ -782,12 +821,13 @@ public class AdminController {
             @RequestBody Map<String, Object> data) {
         Map<String, Object> response = new HashMap<>();
         try {
-            String name     = (String) data.get("name");
-            String role     = (String) data.get("role");
-            Boolean active  = (Boolean) data.get("isActive");
+            String name        = (String) data.get("name");
+            String role        = (String) data.get("role");
+            Boolean active     = (Boolean) data.get("isActive");
+            String description = data.get("description") != null ? (String) data.get("description") : null;
             db.update(
-                "UPDATE admin_users SET name = ?, role = ?, is_active = ? WHERE id = ?",
-                name, role, active, id
+                "UPDATE admin_users SET name = ?, role = ?, description = ?, is_active = ? WHERE id = ?",
+                name, role, description, active, id
             );
             response.put("success", true);
             response.put("message", "تم تحديث بيانات المدير");
