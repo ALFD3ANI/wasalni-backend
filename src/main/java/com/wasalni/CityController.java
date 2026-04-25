@@ -555,21 +555,49 @@ public class CityController {
             String type = (String) req.get("type");
 
             if ("restaurant".equals(type)) {
-                // إنشاء حساب مطعم تلقائي
+                // إضافة الأعمدة الجديدة للمطاعم إن لم تكن موجودة
+                String[] rCols = {
+                    "ALTER TABLE restaurants ADD COLUMN legal_name VARCHAR(150)",
+                    "ALTER TABLE restaurants ADD COLUMN commercial_reg VARCHAR(50)",
+                    "ALTER TABLE restaurants ADD COLUMN cr_doc_url VARCHAR(500)",
+                    "ALTER TABLE restaurants ADD COLUMN health_cert_url VARCHAR(500)",
+                    "ALTER TABLE restaurants ADD COLUMN manager_phone VARCHAR(20)"
+                };
+                for (String col : rCols) { try { db.execute(col); } catch (Exception ignored) {} }
+
+                // إنشاء حساب مطعم تلقائي مع الحقول الجديدة
                 db.update(
-                    "INSERT INTO restaurants (name, username, password, phone, address, description, image, city_id, is_active) " +
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)",
+                    "INSERT INTO restaurants (name, username, password, phone, address, description, image, city_id, " +
+                    "legal_name, commercial_reg, cr_doc_url, health_cert_url, manager_phone, is_active) " +
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)",
                     req.get("name"), req.get("email"), req.get("password"),
                     req.get("phone"), req.get("address"), req.get("description"),
-                    req.get("image"), req.get("city_id")
+                    req.get("image"), req.get("city_id"),
+                    req.get("legal_name"), req.get("commercial_reg"), req.get("cr_doc_url"),
+                    req.get("health_cert_url"), req.get("manager_phone")
                 );
             } else if ("driver".equals(type)) {
-                // إنشاء حساب سائق تلقائي — بدون city_id لأنه قد لا يكون في جدول السائقين
+                // إضافة الأعمدة الجديدة للسائقين إن لم تكن موجودة
+                String[] dCols = {
+                    "ALTER TABLE drivers ADD COLUMN vehicle_model VARCHAR(100)",
+                    "ALTER TABLE drivers ADD COLUMN vehicle_year VARCHAR(10)",
+                    "ALTER TABLE drivers ADD COLUMN license_img_url VARCHAR(500)",
+                    "ALTER TABLE drivers ADD COLUMN id_img_url VARCHAR(500)",
+                    "ALTER TABLE drivers ADD COLUMN insurance_doc_url VARCHAR(500)",
+                    "ALTER TABLE drivers ADD COLUMN age INT"
+                };
+                for (String col : dCols) { try { db.execute(col); } catch (Exception ignored) {} }
+
+                // إنشاء حساب سائق تلقائي مع الحقول الجديدة
                 db.update(
-                    "INSERT INTO drivers (name, email, phone, password, vehicle_type, vehicle_plate, is_active, is_available) " +
-                    "VALUES (?, ?, ?, ?, ?, ?, 1, 1)",
+                    "INSERT INTO drivers (name, email, phone, password, vehicle_type, vehicle_plate, " +
+                    "vehicle_model, vehicle_year, license_img_url, id_img_url, insurance_doc_url, age, is_active, is_available) " +
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1)",
                     req.get("name"), req.get("email"), req.get("phone"),
-                    req.get("password"), req.get("vehicle_type"), req.get("vehicle_plate")
+                    req.get("password"), req.get("vehicle_type"), req.get("vehicle_plate"),
+                    req.get("vehicle_model"), req.get("vehicle_year"),
+                    req.get("license_img_url"), req.get("id_img_url"), req.get("insurance_doc_url"),
+                    req.get("age")
                 );
             }
 
