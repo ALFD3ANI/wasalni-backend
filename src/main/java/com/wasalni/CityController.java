@@ -272,39 +272,76 @@ public class CityController {
 
         try {
             // إنشاء جدول طلبات الانضمام إذا لم يكن موجوداً
+            // إنشاء جدول طلبات الانضمام مع جميع الحقول الجديدة
             db.execute(
                 "CREATE TABLE IF NOT EXISTS join_requests (" +
                 "id INT AUTO_INCREMENT PRIMARY KEY, " +
                 "type VARCHAR(20) NOT NULL, " +
                 "name VARCHAR(100) NOT NULL, " +
+                "legal_name VARCHAR(150), " +
                 "email VARCHAR(100), " +
                 "phone VARCHAR(20), " +
+                "manager_phone VARCHAR(20), " +
                 "city_id INT, " +
                 "password VARCHAR(255), " +
                 "description TEXT, " +
                 "address VARCHAR(255), " +
                 "image VARCHAR(500), " +
                 "commercial_reg VARCHAR(50), " +
+                "cr_doc_url VARCHAR(500), " +
+                "health_cert_url VARCHAR(500), " +
                 "vehicle_type VARCHAR(50), " +
                 "vehicle_plate VARCHAR(20), " +
+                "vehicle_model VARCHAR(100), " +
+                "vehicle_year VARCHAR(10), " +
+                "license_img_url VARCHAR(500), " +
+                "id_img_url VARCHAR(500), " +
+                "insurance_doc_url VARCHAR(500), " +
+                "age INT, " +
                 "status VARCHAR(20) DEFAULT 'pending', " +
                 "reject_reason TEXT, " +
                 "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
             );
-            String name = (String) data.get("name");
-            String email = (String) data.get("email");
-            String phone = (String) data.get("phone");
-            String password = (String) data.get("password");
-            Integer cityId = ((Number) data.get("cityId")).intValue();
-            String description = (String) data.get("description");
-            String address = (String) data.get("address");
-            String image = (String) data.get("image");
-            String commercialReg = (String) data.get("commercialReg");
+            // إضافة الأعمدة الجديدة إن لم تكن موجودة (للجداول القديمة)
+            String[] newCols = {
+                "ALTER TABLE join_requests ADD COLUMN legal_name VARCHAR(150)",
+                "ALTER TABLE join_requests ADD COLUMN manager_phone VARCHAR(20)",
+                "ALTER TABLE join_requests ADD COLUMN cr_doc_url VARCHAR(500)",
+                "ALTER TABLE join_requests ADD COLUMN health_cert_url VARCHAR(500)",
+                "ALTER TABLE join_requests ADD COLUMN vehicle_model VARCHAR(100)",
+                "ALTER TABLE join_requests ADD COLUMN vehicle_year VARCHAR(10)",
+                "ALTER TABLE join_requests ADD COLUMN license_img_url VARCHAR(500)",
+                "ALTER TABLE join_requests ADD COLUMN id_img_url VARCHAR(500)",
+                "ALTER TABLE join_requests ADD COLUMN insurance_doc_url VARCHAR(500)",
+                "ALTER TABLE join_requests ADD COLUMN age INT",
+                "ALTER TABLE join_requests ADD COLUMN manager_phone VARCHAR(20)"
+            };
+            for (String col : newCols) { try { db.execute(col); } catch (Exception ignored) {} }
 
-            // التحقق من الحقول الأساسية
-            if (name == null || email == null || phone == null || password == null || cityId == null) {
+            String name         = (String) data.get("name");
+            String legalName    = (String) data.get("legalName");
+            String email        = (String) data.get("email");
+            String phone        = (String) data.get("phone");
+            String managerPhone = (String) data.get("managerPhone");
+            String password     = (String) data.get("password");
+            Integer cityId      = data.get("cityId") != null ? ((Number) data.get("cityId")).intValue() : null;
+            String description  = (String) data.get("description");
+            String address      = (String) data.get("address");
+            String image        = (String) data.get("image");
+            String commercialReg  = (String) data.get("commercialReg");
+            String crDocUrl       = (String) data.get("crDocUrl");
+            String healthCertUrl  = (String) data.get("healthCertUrl");
+
+            // التحقق من الحقول الإلزامية للمطعم
+            if (name == null || name.isEmpty() ||
+                email == null || email.isEmpty() ||
+                phone == null || phone.isEmpty() ||
+                password == null || password.isEmpty() ||
+                commercialReg == null || commercialReg.isEmpty() ||
+                address == null || address.isEmpty() ||
+                cityId == null) {
                 response.put("success", false);
-                response.put("message", "جميع الحقول الأساسية مطلوبة");
+                response.put("message", "جميع الحقول الإلزامية مطلوبة (الاسم، الإيميل، الجوال، العنوان، رقم السجل التجاري)");
                 return response;
             }
 
@@ -335,9 +372,9 @@ public class CityController {
             String hashedPassword = passwordEncoder.encode(password);
 
             db.update(
-                "INSERT INTO join_requests (type, name, email, phone, city_id, password, description, address, image, commercial_reg) " +
-                "VALUES ('restaurant', ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                name, email, phone, cityId, hashedPassword, description, address, image, commercialReg
+                "INSERT INTO join_requests (type, name, legal_name, email, phone, manager_phone, city_id, password, description, address, image, commercial_reg, cr_doc_url, health_cert_url) " +
+                "VALUES ('restaurant', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                name, legalName, email, phone, managerPhone, cityId, hashedPassword, description, address, image, commercialReg, crDocUrl, healthCertUrl
             );
 
             response.put("success", true);
@@ -360,18 +397,36 @@ public class CityController {
         Map<String, Object> response = new HashMap<>();
 
         try {
-            String name = (String) data.get("name");
-            String email = (String) data.get("email");
-            String phone = (String) data.get("phone");
-            String password = (String) data.get("password");
-            Integer cityId = ((Number) data.get("cityId")).intValue();
-            String vehicleType = (String) data.get("vehicleType");
-            String vehiclePlate = (String) data.get("vehiclePlate");
+            String name           = (String) data.get("name");
+            String email          = (String) data.get("email");
+            String phone          = (String) data.get("phone");
+            String password       = (String) data.get("password");
+            Integer cityId        = data.get("cityId") != null ? ((Number) data.get("cityId")).intValue() : null;
+            String vehicleType    = (String) data.get("vehicleType");
+            String vehiclePlate   = (String) data.get("vehiclePlate");
+            String vehicleModel   = (String) data.get("vehicleModel");
+            String vehicleYear    = (String) data.get("vehicleYear");
+            String licenseImgUrl  = (String) data.get("licenseImgUrl");
+            String idImgUrl       = (String) data.get("idImgUrl");
+            String insuranceDocUrl= (String) data.get("insuranceDocUrl");
+            Integer age           = data.get("age") != null ? ((Number) data.get("age")).intValue() : null;
 
-            // التحقق من الحقول الأساسية
-            if (name == null || email == null || phone == null || password == null || cityId == null) {
+            // التحقق من الحقول الإلزامية للسائق
+            if (name == null || name.isEmpty() ||
+                email == null || email.isEmpty() ||
+                phone == null || phone.isEmpty() ||
+                password == null || password.isEmpty() ||
+                vehiclePlate == null || vehiclePlate.isEmpty() ||
+                cityId == null) {
                 response.put("success", false);
-                response.put("message", "جميع الحقول الأساسية مطلوبة");
+                response.put("message", "جميع الحقول الإلزامية مطلوبة");
+                return response;
+            }
+
+            // التحقق من الحد الأدنى للسن
+            if (age != null && age < 18) {
+                response.put("success", false);
+                response.put("message", "يجب أن يكون عمرك 18 سنة أو أكثر للانضمام كسائق");
                 return response;
             }
 
@@ -402,9 +457,9 @@ public class CityController {
             String hashedPassword = passwordEncoder.encode(password);
 
             db.update(
-                "INSERT INTO join_requests (type, name, email, phone, city_id, password, vehicle_type, vehicle_plate) " +
-                "VALUES ('driver', ?, ?, ?, ?, ?, ?, ?)",
-                name, email, phone, cityId, hashedPassword, vehicleType, vehiclePlate
+                "INSERT INTO join_requests (type, name, email, phone, city_id, password, vehicle_type, vehicle_plate, vehicle_model, vehicle_year, license_img_url, id_img_url, insurance_doc_url, age) " +
+                "VALUES ('driver', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                name, email, phone, cityId, hashedPassword, vehicleType, vehiclePlate, vehicleModel, vehicleYear, licenseImgUrl, idImgUrl, insuranceDocUrl, age
             );
 
             response.put("success", true);
