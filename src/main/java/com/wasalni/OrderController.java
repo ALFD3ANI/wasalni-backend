@@ -204,14 +204,34 @@ public class OrderController {
                 }
             }
 
+            // معالجة نقاط الولاء — استخدامها كخصم (100 نقطة = 5 ريال)
+            Boolean usePoints = (Boolean) data.get("usePoints");
+            double pointsDiscount = 0;
+            if (Boolean.TRUE.equals(usePoints)) {
+                try {
+                    Map<String, Object> up = db.queryForMap("SELECT loyalty_points FROM users WHERE id = ?", userId);
+                    int pts = up.get("loyalty_points") != null ? ((Number) up.get("loyalty_points")).intValue() : 0;
+                    int blocks = pts / 100;
+                    if (blocks > 0) {
+                        pointsDiscount = blocks * 5.0;
+                        // لا يتجاوز الخصم قيمة الطلب
+                        if (pointsDiscount > subtotal) pointsDiscount = subtotal;
+                        int toDeduct = (int)(pointsDiscount / 5.0) * 100;
+                        db.update("UPDATE users SET loyalty_points = loyalty_points - ? WHERE id = ?", toDeduct, userId);
+                    }
+                } catch (Exception ignored) {}
+            }
+
             // حساب المبلغ النهائي
-            double totalPrice = subtotal + deliveryFee - discount;
+            double totalDiscount = discount + pointsDiscount;
+            double totalPrice = subtotal + deliveryFee - totalDiscount;
+            if (totalPrice < 0) totalPrice = 0;
 
             // إنشاء الطلب في قاعدة البيانات (استخدام finalAddressId بدل addressId الأصلي)
             db.update(
                 "INSERT INTO orders (user_id, restaurant_id, address_id, coupon_id, subtotal, delivery_fee, discount, total_price, payment_method, notes) " +
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                userId, restaurantId, finalAddressId, couponId, subtotal, deliveryFee, discount, totalPrice, paymentMethod, notes
+                userId, restaurantId, finalAddressId, couponId, subtotal, deliveryFee, totalDiscount, totalPrice, paymentMethod, notes
             );
 
             // جلب رقم الطلب الجديد
@@ -220,6 +240,26 @@ public class OrderController {
                 userId
             );
             Integer orderId = (Integer) newOrder.get("id");
+
+            // خصم رصيد المحفظة إذا كانت طريقة الدفع wallet
+            if ("wallet".equals(paymentMethod)) {
+                try {
+                    Map<String, Object> ub = db.queryForMap("SELECT wallet_balance FROM users WHERE id = ?", userId);
+                    double walBal = ub.get("wallet_balance") != null ? ((Number) ub.get("wallet_balance")).doubleValue() : 0;
+                    if (walBal < totalPrice) {
+                        // إلغاء الطلب — الرصيد غير كافٍ
+                        db.update("DELETE FROM orders WHERE id = ?", orderId);
+                        response.put("success", false);
+                        response.put("message", "رصيد المحفظة غير كافٍ (" + walBal + " SAR)");
+                        return response;
+                    }
+                    db.update("UPDATE users SET wallet_balance = wallet_balance - ? WHERE id = ?", totalPrice, userId);
+                } catch (Exception e) {
+                    response.put("success", false);
+                    response.put("message", "خطأ في معالجة المحفظة");
+                    return response;
+                }
+            }
 
             // إضافة تفاصيل الطلب
             for (Map<String, Object> item : items) {

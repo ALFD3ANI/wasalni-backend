@@ -246,6 +246,13 @@ public class DriverController {
 
                 // إذا الطلب وصل أو ألغي - السائق يصبح متاحاً مجدداً
                 if (status.equals("delivered")) {
+                    // إضافة نقاط الولاء للعميل (1 نقطة لكل ريال)
+                    try {
+                        Map<String, Object> ord = db.queryForMap("SELECT user_id, total_price FROM orders WHERE id = ?", id);
+                        String custId = ord.get("user_id").toString();
+                        int pts = (int) Math.floor(((Number) ord.get("total_price")).doubleValue());
+                        if (pts > 0) db.update("UPDATE users SET loyalty_points = loyalty_points + ? WHERE id = ?", pts, custId);
+                    } catch (Exception ignored) {}
                     db.update(
                         "UPDATE drivers SET total_deliveries = total_deliveries + 1, is_available = 1 WHERE id = ?",
                         driverId
