@@ -620,6 +620,35 @@ public class AdminController {
     }
 
     // ============================================
+    // PUT /api/admin/coupons/{id}
+    // تعديل كوبون
+    // ============================================
+    @PutMapping("/coupons/{id}")
+    public Map<String, Object> updateCoupon(
+            @RequestHeader("Authorization") String authHeader,
+            @PathVariable int id,
+            @RequestBody Map<String, Object> data) {
+        Map<String, Object> response = new HashMap<>();
+        try {
+            String code        = (String) data.get("code");
+            String type        = (String) data.get("discountType");
+            double value       = data.get("discountValue") != null ? ((Number) data.get("discountValue")).doubleValue() : 0;
+            double minOrder    = data.get("minOrder")      != null ? ((Number) data.get("minOrder")).doubleValue()      : 0;
+            int    maxUses     = data.get("maxUses")       != null ? ((Number) data.get("maxUses")).intValue()         : 100;
+            db.update(
+                "UPDATE coupons SET code=?, discount_type=?, discount_value=?, min_order=?, max_uses=? WHERE id=?",
+                code, type, value, minOrder, maxUses, id
+            );
+            response.put("success", true);
+            response.put("message", "تم تعديل الكوبون");
+        } catch (Exception e) {
+            response.put("success", false);
+            response.put("message", "حدث خطأ: " + e.getMessage());
+        }
+        return response;
+    }
+
+    // ============================================
     // GET /api/admin/categories
     // عرض كل التصنيفات
     // ============================================
