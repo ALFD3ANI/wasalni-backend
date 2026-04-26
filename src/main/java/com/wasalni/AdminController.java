@@ -260,6 +260,71 @@ public class AdminController {
     }
 
     // ============================================
+    // GET /api/admin/users/{id}
+    // تفاصيل زبون مع آخر طلباته وإحصائياته
+    // ============================================
+    @GetMapping("/users/{id}")
+    public Map<String, Object> getUserDetail(
+            @RequestHeader("Authorization") String authHeader,
+            @PathVariable int id) {
+        Map<String, Object> response = new HashMap<>();
+        try {
+            Map<String, Object> user = db.queryForMap(
+                "SELECT id, name, email, phone, wallet_balance, loyalty_points, is_blocked, created_at, avatar " +
+                "FROM users WHERE id = ?", id
+            );
+            Map<String, Object> stats = db.queryForMap(
+                "SELECT COUNT(*) as total_orders, " +
+                "COALESCE(SUM(CASE WHEN status='delivered' THEN total_amount ELSE 0 END),0) as total_spent, " +
+                "COALESCE(SUM(CASE WHEN status='delivered' THEN 1 ELSE 0 END),0) as delivered_count, " +
+                "COALESCE(SUM(CASE WHEN status='cancelled' THEN 1 ELSE 0 END),0) as cancelled_count " +
+                "FROM orders WHERE user_id = ?", id
+            );
+            List<Map<String, Object>> orders = db.queryForList(
+                "SELECT o.id, o.status, o.total_amount, o.created_at, r.name as restaurant_name " +
+                "FROM orders o JOIN restaurants r ON o.restaurant_id = r.id " +
+                "WHERE o.user_id = ? ORDER BY o.created_at DESC LIMIT 5", id
+            );
+            response.put("success", true);
+            response.put("user", user);
+            response.put("stats", stats);
+            response.put("recentOrders", orders);
+        } catch (Exception e) {
+            response.put("success", false);
+            response.put("message", "حدث خطأ: " + e.getMessage());
+        }
+        return response;
+    }
+
+    // ============================================
+    // PUT /api/admin/users/{id}/wallet
+    // تعديل رصيد محفظة زبون يدوياً
+    // ============================================
+    @PutMapping("/users/{id}/wallet")
+    public Map<String, Object> adjustUserWallet(
+            @RequestHeader("Authorization") String authHeader,
+            @PathVariable int id,
+            @RequestBody Map<String, Object> data) {
+        Map<String, Object> response = new HashMap<>();
+        try {
+            double amount = data.get("amount") != null ? ((Number) data.get("amount")).doubleValue() : 0;
+            String reason = data.get("reason") != null ? (String) data.get("reason") : "تعديل يدوي";
+            db.update("UPDATE users SET wallet_balance = wallet_balance + ? WHERE id = ?", amount, id);
+            db.update(
+                "INSERT INTO notifications (user_id, title, message, type) VALUES (?,?,?,?)",
+                id, "تعديل المحفظة", (amount > 0 ? "تمت إضافة " : "تم خصم ") + Math.abs(amount) + " SAR من محفظتك — " + reason, "wallet"
+            );
+            Map<String, Object> updated = db.queryForMap("SELECT wallet_balance FROM users WHERE id = ?", id);
+            response.put("success", true);
+            response.put("newBalance", updated.get("wallet_balance"));
+        } catch (Exception e) {
+            response.put("success", false);
+            response.put("message", "حدث خطأ: " + e.getMessage());
+        }
+        return response;
+    }
+
+    // ============================================
     // GET /api/admin/restaurants
     // عرض كل المطاعم
     // ============================================
