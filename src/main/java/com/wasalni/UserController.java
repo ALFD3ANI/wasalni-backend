@@ -542,4 +542,84 @@ public class UserController {
         }
         return response;
     }
+
+    // ============================================
+    // PUT /api/orders/{id}/cancel
+    // إلغاء طلب من قِبَل الزبون (pending فقط)
+    // ============================================
+    @PutMapping("/orders/{id}/cancel")
+    public Map<String, Object> cancelOrder(
+            @RequestHeader("Authorization") String authHeader,
+            @PathVariable int id) {
+        Map<String, Object> response = new HashMap<>();
+        try {
+            String userId = getUserIdFromToken(authHeader);
+            Map<String, Object> order = db.queryForMap(
+                "SELECT id, status, user_id FROM orders WHERE id = ?", id);
+            if (!order.get("user_id").toString().equals(userId)) {
+                response.put("success", false);
+                response.put("message", "غير مصرح");
+                return response;
+            }
+            String status = (String) order.get("status");
+            if (!"pending".equals(status)) {
+                response.put("success", false);
+                response.put("message", "لا يمكن إلغاء الطلب بعد قبوله من المطعم");
+                return response;
+            }
+            db.update("UPDATE orders SET status = 'cancelled' WHERE id = ?", id);
+            response.put("success", true);
+            response.put("message", "تم إلغاء الطلب");
+        } catch (Exception e) {
+            response.put("success", false);
+            response.put("message", "حدث خطأ: " + e.getMessage());
+        }
+        return response;
+    }
+
+    // ============================================
+    // POST /api/user/wallet/topup-request
+    // طلب شحن المحفظة
+    // ============================================
+    @PostMapping("/wallet/topup-request")
+    public Map<String, Object> requestTopup(
+            @RequestHeader("Authorization") String authHeader,
+            @RequestBody Map<String, Object> data) {
+        Map<String, Object> response = new HashMap<>();
+        try {
+            String userId = getUserIdFromToken(authHeader);
+            double amount = Double.parseDouble(data.get("amount").toString());
+            String method = data.getOrDefault("method", "bank_transfer").toString();
+            String notes  = data.getOrDefault("notes", "").toString();
+            if (amount < 10) {
+                response.put("success", false);
+                response.put("message", "الحد الأدنى للشحن 10 ريال");
+                return response;
+            }
+            // إنشاء الجدول إذا لم يكن موجوداً
+            db.execute(
+                "CREATE TABLE IF NOT EXISTS wallet_topup_requests (" +
+                "id INT AUTO_INCREMENT PRIMARY KEY," +
+                "user_id INT NOT NULL," +
+                "amount DECIMAL(10,2) NOT NULL," +
+                "method VARCHAR(50) DEFAULT 'bank_transfer'," +
+                "notes TEXT," +
+                "status VARCHAR(20) DEFAULT 'pending'," +
+                "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP," +
+                "approved_at TIMESTAMP NULL," +
+                "approved_by INT NULL" +
+                ")"
+            );
+            db.update(
+                "INSERT INTO wallet_topup_requests (user_id, amount, method, notes) VALUES (?,?,?,?)",
+                userId, amount, method, notes
+            );
+            response.put("success", true);
+            response.put("message", "تم إرسال طلب الشحن بنجاح، سيتم مراجعته خلال 24 ساعة");
+        } catch (Exception e) {
+            response.put("success", false);
+            response.put("message", "حدث خطأ: " + e.getMessage());
+        }
+        return response;
+    }
 }

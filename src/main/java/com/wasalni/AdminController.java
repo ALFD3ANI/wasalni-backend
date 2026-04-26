@@ -1648,4 +1648,121 @@ public class AdminController {
         }
         return response;
     }
+
+    // ============================================
+    // GET /api/admin/wallet-requests
+    // قائمة طلبات شحن المحفظة
+    // ============================================
+    @GetMapping("/wallet-requests")
+    public Map<String, Object> getWalletRequests(@RequestHeader("Authorization") String authHeader) {
+        Map<String, Object> response = new HashMap<>();
+        try {
+            List<Map<String, Object>> rows = db.queryForList(
+                "SELECT w.*, u.name as user_name, u.email as user_email " +
+                "FROM wallet_topup_requests w " +
+                "JOIN users u ON w.user_id = u.id " +
+                "ORDER BY w.created_at DESC LIMIT 100"
+            );
+            response.put("success", true);
+            response.put("requests", rows);
+        } catch (Exception e) {
+            response.put("success", false);
+            response.put("message", "حدث خطأ: " + e.getMessage());
+        }
+        return response;
+    }
+
+    // ============================================
+    // PUT /api/admin/wallet-requests/{id}/approve
+    // الموافقة على طلب شحن وإضافة الرصيد
+    // ============================================
+    @PutMapping("/wallet-requests/{id}/approve")
+    public Map<String, Object> approveWalletRequest(
+            @RequestHeader("Authorization") String authHeader,
+            @PathVariable int id) {
+        Map<String, Object> response = new HashMap<>();
+        try {
+            Map<String, Object> req = db.queryForMap(
+                "SELECT * FROM wallet_topup_requests WHERE id = ?", id);
+            if (!"pending".equals(req.get("status"))) {
+                response.put("success", false);
+                response.put("message", "تم معالجة هذا الطلب مسبقاً");
+                return response;
+            }
+            double amount = ((Number) req.get("amount")).doubleValue();
+            int userId = ((Number) req.get("user_id")).intValue();
+            db.update("UPDATE users SET wallet_balance = wallet_balance + ? WHERE id = ?", amount, userId);
+            db.update(
+                "UPDATE wallet_topup_requests SET status='approved', approved_at=NOW() WHERE id = ?", id);
+            // إشعار للمستخدم
+            try {
+                db.update(
+                    "INSERT INTO notifications (user_id, type, title, message) VALUES (?,?,?,?)",
+                    userId, "system",
+                    "✅ تم شحن محفظتك",
+                    "تمت إضافة " + amount + " SAR إلى محفظتك بنجاح"
+                );
+            } catch (Exception ignored) {}
+            response.put("success", true);
+            response.put("message", "تمت الموافقة وإضافة " + amount + " SAR");
+        } catch (Exception e) {
+            response.put("success", false);
+            response.put("message", "حدث خطأ: " + e.getMessage());
+        }
+        return response;
+    }
+
+    // ============================================
+    // PUT /api/admin/wallet-requests/{id}/reject
+    // رفض طلب شحن
+    // ============================================
+    @PutMapping("/wallet-requests/{id}/reject")
+    public Map<String, Object> rejectWalletRequest(
+            @RequestHeader("Authorization") String authHeader,
+            @PathVariable int id) {
+        Map<String, Object> response = new HashMap<>();
+        try {
+            db.update(
+                "UPDATE wallet_topup_requests SET status='rejected', approved_at=NOW() WHERE id = ? AND status='pending'", id);
+            response.put("success", true);
+            response.put("message", "تم رفض الطلب");
+        } catch (Exception e) {
+            response.put("success", false);
+            response.put("message", "حدث خطأ: " + e.getMessage());
+        }
+        return response;
+    }
+
+    // ============================================
+    // POST /api/admin/notifications/broadcast
+    // إرسال إشعار جماعي لكل المستخدمين
+    // ============================================
+    @PostMapping("/notifications/broadcast")
+    public Map<String, Object> broadcastNotification(
+            @RequestHeader("Authorization") String authHeader,
+            @RequestBody Map<String, Object> data) {
+        Map<String, Object> response = new HashMap<>();
+        try {
+            String title   = (String) data.get("title");
+            String message = (String) data.get("message");
+            String type    = data.getOrDefault("type", "promo").toString();
+            if (title == null || message == null) {
+                response.put("success", false);
+                response.put("message", "العنوان والرسالة مطلوبان");
+                return response;
+            }
+            int count = db.update(
+                "INSERT INTO notifications (user_id, type, title, message) " +
+                "SELECT id, ?, ?, ? FROM users WHERE role = 'user'",
+                type, title, message
+            );
+            response.put("success", true);
+            response.put("count", count);
+            response.put("message", "تم إرسال الإشعار لـ " + count + " مستخدم");
+        } catch (Exception e) {
+            response.put("success", false);
+            response.put("message", "حدث خطأ: " + e.getMessage());
+        }
+        return response;
+    }
 }
