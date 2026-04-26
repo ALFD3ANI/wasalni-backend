@@ -909,6 +909,370 @@ public class AdminController {
     }
 
     // ============================================
+    // PUT /api/admin/restaurants/{id}/featured
+    // تحديد مطعم كمميز أو إلغاء تمييزه
+    // ============================================
+    @PutMapping("/restaurants/{id}/featured")
+    public Map<String, Object> toggleFeatured(
+            @RequestHeader("Authorization") String authHeader,
+            @PathVariable int id,
+            @RequestBody Map<String, Object> data) {
+        Map<String, Object> response = new HashMap<>();
+        try {
+            try { db.execute("ALTER TABLE restaurants ADD COLUMN is_featured TINYINT DEFAULT 0"); } catch (Exception ignored) {}
+            Boolean featured = (Boolean) data.get("isFeatured");
+            db.update("UPDATE restaurants SET is_featured=? WHERE id=?", featured, id);
+            db.update("INSERT INTO admin_logs (admin_name, action, details) VALUES (?,?,?)",
+                "admin", featured ? "تمييز مطعم" : "إلغاء تمييز مطعم", "رقم المطعم: " + id);
+            response.put("success", true);
+            response.put("message", featured ? "تم تمييز المطعم ⭐" : "تم إلغاء التمييز");
+        } catch (Exception e) {
+            response.put("success", false);
+            response.put("message", "حدث خطأ: " + e.getMessage());
+        }
+        return response;
+    }
+
+    // ============================================
+    // GET /api/admin/stats/daily
+    // إحصائيات الطلبات والإيرادات آخر 30 يوم
+    // ============================================
+    @GetMapping("/stats/daily")
+    public Map<String, Object> getDailyStats(@RequestHeader("Authorization") String authHeader) {
+        Map<String, Object> response = new HashMap<>();
+        try {
+            List<Map<String, Object>> daily = db.queryForList(
+                "SELECT DATE(created_at) as day, COUNT(*) as orders, " +
+                "COALESCE(SUM(total_price),0) as revenue, " +
+                "COALESCE(SUM(CASE WHEN status='delivered' THEN total_price ELSE 0 END),0) as delivered_revenue " +
+                "FROM orders WHERE created_at >= DATE_SUB(CURDATE(), INTERVAL 30 DAY) " +
+                "GROUP BY DATE(created_at) ORDER BY day ASC"
+            );
+            Long weekOrders = db.queryForObject(
+                "SELECT COUNT(*) FROM orders WHERE created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)", Long.class
+            );
+            Long monthOrders = db.queryForObject(
+                "SELECT COUNT(*) FROM orders WHERE created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)", Long.class
+            );
+            Double weekRevenue = db.queryForObject(
+                "SELECT COALESCE(SUM(total_price),0) FROM orders WHERE status='delivered' AND created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)", Double.class
+            );
+            List<Map<String, Object>> topProducts = db.queryForList(
+                "SELECT p.name, r.name as restaurant_name, SUM(oi.quantity) as sold " +
+                "FROM order_items oi JOIN products p ON oi.product_id=p.id " +
+                "JOIN orders o ON oi.order_id=o.id " +
+                "JOIN restaurants r ON o.restaurant_id=r.id " +
+                "WHERE o.status='delivered' " +
+                "GROUP BY p.id, p.name, r.name ORDER BY sold DESC LIMIT 10"
+            );
+            response.put("success", true);
+            response.put("daily", daily);
+            response.put("weekOrders",   weekOrders  != null ? weekOrders  : 0);
+            response.put("monthOrders",  monthOrders != null ? monthOrders : 0);
+            response.put("weekRevenue",  weekRevenue != null ? weekRevenue : 0);
+            response.put("topProducts",  topProducts);
+        } catch (Exception e) {
+            response.put("success", false);
+            response.put("message", "حدث خطأ: " + e.getMessage());
+        }
+        return response;
+    }
+
+    // ============================================
+    // GET /api/admin/best-admins
+    // أفضل الإداريين حسب التذاكر المنجزة
+    // ============================================
+    @GetMapping("/best-admins")
+    public Map<String, Object> getBestAdmins(@RequestHeader("Authorization") String authHeader) {
+        Map<String, Object> response = new HashMap<>();
+        try {
+            db.execute(
+                "CREATE TABLE IF NOT EXISTS support_tickets (" +
+                "id INT AUTO_INCREMENT PRIMARY KEY, subject VARCHAR(255), message TEXT, " +
+                "status VARCHAR(20) DEFAULT 'open', assigned_to VARCHAR(50), " +
+                "reply TEXT, user_id INT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, " +
+                "updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP)"
+            );
+            try { db.execute("ALTER TABLE support_tickets ADD COLUMN assigned_to VARCHAR(50) DEFAULT NULL"); } catch (Exception ignored) {}
+            // أفضل الإداريين بعدد التذاكر المغلقة المعيّنة لهم
+            List<Map<String, Object>> best = db.queryForList(
+                "SELECT au.name, au.username, au.role, " +
+                "COUNT(st.id) as total_assigned, " +
+                "SUM(CASE WHEN st.status='closed' THEN 1 ELSE 0 END) as closed_count, " +
+                "SUM(CASE WHEN st.status='open' THEN 1 ELSE 0 END) as open_count " +
+                "FROM admin_users au " +
+                "LEFT JOIN support_tickets st ON st.assigned_to = au.username " +
+                "GROUP BY au.id, au.name, au.username, au.role " +
+                "ORDER BY closed_count DESC LIMIT 10"
+            );
+            response.put("success", true);
+            response.put("admins", best);
+        } catch (Exception e) {
+            response.put("success", false);
+            response.put("message", "حدث خطأ: " + e.getMessage());
+        }
+        return response;
+    }
+
+    // ============================================
+    // GET /api/admin/invite-codes — عرض أكواد الدعوة
+    // ============================================
+    @GetMapping("/invite-codes")
+    public Map<String, Object> getInviteCodes(@RequestHeader("Authorization") String authHeader) {
+        Map<String, Object> response = new HashMap<>();
+        try {
+            db.execute(
+                "CREATE TABLE IF NOT EXISTS invite_codes (" +
+                "id INT AUTO_INCREMENT PRIMARY KEY, " +
+                "code VARCHAR(30) UNIQUE NOT NULL, " +
+                "reward_type VARCHAR(20) DEFAULT 'points', " +
+                "reward_value DECIMAL(8,2) DEFAULT 0, " +
+                "role_granted VARCHAR(20) DEFAULT NULL, " +
+                "max_uses INT DEFAULT 1, " +
+                "used_count INT DEFAULT 0, " +
+                "is_active TINYINT DEFAULT 1, " +
+                "expires_at TIMESTAMP DEFAULT NULL, " +
+                "created_by VARCHAR(50), " +
+                "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
+            );
+            List<Map<String, Object>> codes = db.queryForList(
+                "SELECT * FROM invite_codes ORDER BY created_at DESC"
+            );
+            response.put("success", true);
+            response.put("codes", codes);
+        } catch (Exception e) {
+            response.put("success", false);
+            response.put("message", "حدث خطأ: " + e.getMessage());
+        }
+        return response;
+    }
+
+    // ============================================
+    // POST /api/admin/invite-codes — إنشاء كود دعوة
+    // Body: { code, rewardType, rewardValue, roleGranted, maxUses, expiresAt }
+    // ============================================
+    @PostMapping("/invite-codes")
+    public Map<String, Object> createInviteCode(
+            @RequestHeader("Authorization") String authHeader,
+            @RequestBody Map<String, Object> data) {
+        Map<String, Object> response = new HashMap<>();
+        try {
+            db.execute(
+                "CREATE TABLE IF NOT EXISTS invite_codes (" +
+                "id INT AUTO_INCREMENT PRIMARY KEY, " +
+                "code VARCHAR(30) UNIQUE NOT NULL, " +
+                "reward_type VARCHAR(20) DEFAULT 'points', " +
+                "reward_value DECIMAL(8,2) DEFAULT 0, " +
+                "role_granted VARCHAR(20) DEFAULT NULL, " +
+                "max_uses INT DEFAULT 1, " +
+                "used_count INT DEFAULT 0, " +
+                "is_active TINYINT DEFAULT 1, " +
+                "expires_at TIMESTAMP DEFAULT NULL, " +
+                "created_by VARCHAR(50), " +
+                "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
+            );
+            String code        = (String) data.get("code");
+            String rewardType  = data.get("rewardType")  != null ? (String) data.get("rewardType")  : "points";
+            Double rewardValue = data.get("rewardValue")  != null ? ((Number) data.get("rewardValue")).doubleValue() : 0;
+            String roleGranted = (String) data.get("roleGranted");
+            Integer maxUses    = data.get("maxUses") != null ? ((Number) data.get("maxUses")).intValue() : 1;
+            String expiresAt   = (String) data.get("expiresAt");
+            db.update(
+                "INSERT INTO invite_codes (code, reward_type, reward_value, role_granted, max_uses, expires_at, created_by) VALUES (?,?,?,?,?,?,?)",
+                code, rewardType, rewardValue, roleGranted, maxUses,
+                expiresAt != null && !expiresAt.isEmpty() ? expiresAt : null,
+                "admin"
+            );
+            db.update("INSERT INTO admin_logs (admin_name, action, details) VALUES (?,?,?)",
+                "admin", "إنشاء كود دعوة", "الكود: " + code);
+            response.put("success", true);
+            response.put("message", "تم إنشاء كود الدعوة بنجاح");
+        } catch (Exception e) {
+            response.put("success", false);
+            response.put("message", "حدث خطأ: " + e.getMessage());
+        }
+        return response;
+    }
+
+    // ============================================
+    // PUT /api/admin/invite-codes/{id}/toggle — تفعيل/تعطيل كود
+    // ============================================
+    @PutMapping("/invite-codes/{id}/toggle")
+    public Map<String, Object> toggleInviteCode(
+            @RequestHeader("Authorization") String authHeader,
+            @PathVariable int id) {
+        Map<String, Object> response = new HashMap<>();
+        try {
+            db.update("UPDATE invite_codes SET is_active = NOT is_active WHERE id=?", id);
+            response.put("success", true);
+            response.put("message", "تم تغيير حالة الكود");
+        } catch (Exception e) {
+            response.put("success", false);
+            response.put("message", "حدث خطأ: " + e.getMessage());
+        }
+        return response;
+    }
+
+    // ============================================
+    // POST /api/admin/invite-codes/use — استخدام كود دعوة
+    // Body: { code }  — يُستدعى عند تسجيل مستخدم جديد
+    // ============================================
+    @PostMapping("/invite-codes/use")
+    public Map<String, Object> useInviteCode(
+            @RequestHeader(value = "Authorization", required = false) String authHeader,
+            @RequestBody Map<String, Object> data) {
+        Map<String, Object> response = new HashMap<>();
+        try {
+            String code   = (String) data.get("code");
+            String userId = (String) data.get("userId");
+            List<Map<String, Object>> codes = db.queryForList(
+                "SELECT * FROM invite_codes WHERE code=? AND is_active=1 AND (expires_at IS NULL OR expires_at > NOW()) AND used_count < max_uses",
+                code
+            );
+            if (codes.isEmpty()) {
+                response.put("success", false);
+                response.put("message", "الكود غير صحيح أو منتهي");
+                return response;
+            }
+            Map<String, Object> ic = codes.get(0);
+            db.update("UPDATE invite_codes SET used_count=used_count+1 WHERE id=?", ic.get("id"));
+            // تطبيق المكافأة
+            String rewardType  = (String) ic.get("reward_type");
+            double rewardValue = ic.get("reward_value") != null ? ((Number) ic.get("reward_value")).doubleValue() : 0;
+            if ("points".equals(rewardType) && userId != null) {
+                db.update("UPDATE users SET loyalty_points=loyalty_points+? WHERE id=?", (int) rewardValue, userId);
+            } else if ("wallet".equals(rewardType) && userId != null) {
+                db.update("UPDATE users SET wallet_balance=wallet_balance+? WHERE id=?", rewardValue, userId);
+            }
+            response.put("success", true);
+            response.put("message", "تم تطبيق كود الدعوة!");
+            response.put("rewardType",  rewardType);
+            response.put("rewardValue", rewardValue);
+            response.put("roleGranted", ic.get("role_granted"));
+        } catch (Exception e) {
+            response.put("success", false);
+            response.put("message", "حدث خطأ: " + e.getMessage());
+        }
+        return response;
+    }
+
+    // ============================================
+    // GET /api/admin/admin-users/{id}/permissions — قراءة صلاحيات مدير
+    // ============================================
+    @GetMapping("/admin-users/{id}/permissions")
+    public Map<String, Object> getAdminPermissions(
+            @RequestHeader("Authorization") String authHeader,
+            @PathVariable int id) {
+        Map<String, Object> response = new HashMap<>();
+        try {
+            try { db.execute("ALTER TABLE admin_users ADD COLUMN permissions TEXT DEFAULT NULL"); } catch (Exception ignored) {}
+            List<Map<String, Object>> result = db.queryForList(
+                "SELECT id, name, username, role, permissions FROM admin_users WHERE id=?", id
+            );
+            if (result.isEmpty()) { response.put("success", false); response.put("message", "المدير غير موجود"); return response; }
+            response.put("success", true);
+            response.put("admin", result.get(0));
+        } catch (Exception e) {
+            response.put("success", false);
+            response.put("message", "حدث خطأ: " + e.getMessage());
+        }
+        return response;
+    }
+
+    // ============================================
+    // PUT /api/admin/admin-users/{id}/permissions — تحديث صلاحيات مدير (سوبر أدمن فقط)
+    // Body: { permissions: "restaurants,orders,support" }
+    // ============================================
+    @PutMapping("/admin-users/{id}/permissions")
+    public Map<String, Object> updateAdminPermissions(
+            @RequestHeader("Authorization") String authHeader,
+            @PathVariable int id,
+            @RequestBody Map<String, Object> data) {
+        Map<String, Object> response = new HashMap<>();
+        try {
+            try { db.execute("ALTER TABLE admin_users ADD COLUMN permissions TEXT DEFAULT NULL"); } catch (Exception ignored) {}
+            String permissions = (String) data.get("permissions");
+            String role        = data.get("role") != null ? (String) data.get("role") : null;
+            if (role != null) {
+                db.update("UPDATE admin_users SET permissions=?, role=? WHERE id=?", permissions, role, id);
+            } else {
+                db.update("UPDATE admin_users SET permissions=? WHERE id=?", permissions, id);
+            }
+            db.update("INSERT INTO admin_logs (admin_name, action, details) VALUES (?,?,?)",
+                "admin", "تحديث صلاحيات مدير", "رقم المدير: " + id + " | صلاحيات: " + permissions);
+            response.put("success", true);
+            response.put("message", "تم تحديث الصلاحيات");
+        } catch (Exception e) {
+            response.put("success", false);
+            response.put("message", "حدث خطأ: " + e.getMessage());
+        }
+        return response;
+    }
+
+    // ============================================
+    // GET /api/admin/tickets/assign — توزيع التذاكر على الإداريين
+    // ============================================
+    @PutMapping("/tickets/{id}/assign")
+    public Map<String, Object> assignTicket(
+            @RequestHeader("Authorization") String authHeader,
+            @PathVariable int id,
+            @RequestBody Map<String, Object> data) {
+        Map<String, Object> response = new HashMap<>();
+        try {
+            try { db.execute("ALTER TABLE support_tickets ADD COLUMN assigned_to VARCHAR(50) DEFAULT NULL"); } catch (Exception ignored) {}
+            String assignedTo = (String) data.get("assignedTo");
+            db.update("UPDATE support_tickets SET assigned_to=?, status='in_progress' WHERE id=?", assignedTo, id);
+            response.put("success", true);
+            response.put("message", "تم توزيع التذكرة على " + assignedTo);
+        } catch (Exception e) {
+            response.put("success", false);
+            response.put("message", "حدث خطأ: " + e.getMessage());
+        }
+        return response;
+    }
+
+    // ============================================
+    // GET /api/admin/drivers/add — إضافة سائق جديد (POST)
+    // ============================================
+    @PostMapping("/drivers/add")
+    public Map<String, Object> addDriver(
+            @RequestHeader("Authorization") String authHeader,
+            @RequestBody Map<String, Object> data) {
+        Map<String, Object> response = new HashMap<>();
+        try {
+            String name        = (String) data.get("name");
+            String phone       = (String) data.get("phone");
+            String vehicleType = data.get("vehicleType") != null ? (String) data.get("vehicleType") : "motorcycle";
+            String area        = data.get("area") != null ? (String) data.get("area") : "";
+            String username    = (String) data.get("username");
+            String password    = (String) data.get("password");
+            Integer cityId     = data.get("cityId") != null ? ((Number) data.get("cityId")).intValue() : null;
+
+            if (username == null || password == null || name == null) {
+                response.put("success", false);
+                response.put("message", "الاسم واسم المستخدم وكلمة المرور مطلوبة");
+                return response;
+            }
+
+            String hashed = passwordEncoder.encode(password);
+            try { db.execute("ALTER TABLE drivers ADD COLUMN city_id INT DEFAULT NULL"); } catch (Exception ignored) {}
+
+            db.update(
+                "INSERT INTO drivers (name, phone, vehicle_type, area, username, password, city_id, is_active) VALUES (?,?,?,?,?,?,?,1)",
+                name, phone, vehicleType, area, username, hashed, cityId
+            );
+            db.update("INSERT INTO admin_logs (admin_name, action, details) VALUES (?,?,?)",
+                "admin", "إضافة سائق", "اسم السائق: " + name);
+            response.put("success", true);
+            response.put("message", "تم تسجيل السائق بنجاح");
+        } catch (Exception e) {
+            response.put("success", false);
+            response.put("message", "حدث خطأ: " + e.getMessage());
+        }
+        return response;
+    }
+
+    // ============================================
     // DELETE /api/admin/coupons/{id}
     // حذف كوبون
     // ============================================

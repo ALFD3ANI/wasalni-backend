@@ -90,34 +90,82 @@ public class OrderController {
                 }
             }
 
-            // حساب مجموع المنتجات
+            // التأكد من وجود عمود is_available في products
+            try { db.execute("ALTER TABLE products ADD COLUMN is_available TINYINT DEFAULT 1"); } catch (Exception ignored) {}
+
+            // حساب مجموع المنتجات (مع دعم extras pricing)
             double subtotal = 0;
             for (Map<String, Object> item : items) {
                 Integer productId = (Integer) item.get("productId");
-                Integer quantity = (Integer) item.get("quantity");
+                Integer quantity  = (Integer) item.get("quantity");
+                if (productId == null || quantity == null || quantity <= 0) continue;
 
-                // جلب سعر المنتج من قاعدة البيانات (التحقق أن المنتج تابع لنفس المطعم)
+                // جلب سعر المنتج من قاعدة البيانات والتحقق من توفره
                 List<Map<String, Object>> productList = db.queryForList(
-                    "SELECT price FROM products WHERE id = ? AND restaurant_id = ?",
+                    "SELECT price, is_available FROM products WHERE id = ? AND restaurant_id = ?",
                     productId, restaurantId
                 );
 
-                // إذا المنتج غير موجود أو لا ينتمي لهذا المطعم، نتجاهله
+                // إذا المنتج غير موجود أو غير تابع لهذا المطعم، نتجاهله
                 if (productList.isEmpty()) continue;
 
-                double price = ((Number) productList.get(0).get("price")).doubleValue();
-                subtotal += price * quantity;
+                Map<String, Object> prod = productList.get(0);
+                // تحقق من أن المنتج متاح (not out of stock)
+                Object avail = prod.get("is_available");
+                if (avail != null && avail.toString().equals("0")) {
+                    response.put("success", false);
+                    response.put("message", "المنتج غير متاح حالياً — يرجى إزالته من السلة");
+                    return response;
+                }
+
+                double basePrice = ((Number) prod.get("price")).doubleValue();
+
+                // احسب سعر الإضافات المُختارة (extraIds أو unitPrice من الفرونت)
+                double extrasTotal = 0;
+                Object unitPriceObj = item.get("unitPrice");
+                if (unitPriceObj != null) {
+                    double sentUnitPrice = ((Number) unitPriceObj).doubleValue();
+                    // استخدم السعر المُرسل إن كان >= السعر الأساسي (الفرق هو الإضافات)
+                    if (sentUnitPrice >= basePrice) {
+                        extrasTotal = sentUnitPrice - basePrice;
+                    }
+                } else {
+                    // بديل: احسب من extraIds إذا أُرسلت
+                    @SuppressWarnings("unchecked")
+                    List<Integer> extraIds = (List<Integer>) item.get("extraIds");
+                    if (extraIds != null && !extraIds.isEmpty()) {
+                        for (Integer extraId : extraIds) {
+                            try {
+                                Map<String, Object> ex = db.queryForMap(
+                                    "SELECT price FROM menu_extras WHERE id = ? AND product_id = ? AND is_available = 1",
+                                    extraId, productId
+                                );
+                                extrasTotal += ((Number) ex.get("price")).doubleValue();
+                            } catch (Exception ignored) {}
+                        }
+                    }
+                }
+
+                subtotal += (basePrice + extrasTotal) * quantity;
             }
 
             // التحقق أن هناك على الأقل منتج واحد صالح
             if (subtotal == 0) {
                 response.put("success", false);
-                response.put("message", "لا توجد منتجات صالحة في الطلب");
+                response.put("message", "لا توجد منتجات صالحة في الطلب أو الطلب فارغ");
                 return response;
             }
 
-            // حساب رسوم التوصيل
+            // حساب رسوم التوصيل من قاعدة البيانات (أو 5 افتراضياً)
             double deliveryFee = 5.0;
+            try {
+                Map<String, Object> restInfo = db.queryForMap(
+                    "SELECT delivery_fee FROM restaurants WHERE id = ?", restaurantId
+                );
+                if (restInfo.get("delivery_fee") != null) {
+                    deliveryFee = ((Number) restInfo.get("delivery_fee")).doubleValue();
+                }
+            } catch (Exception ignored) {}
 
             // التحقق من الكوبون إذا موجود
             double discount = 0;
@@ -140,6 +188,16 @@ public class OrderController {
                     } else {
                         discount = discountValue;
                     }
+
+                    // تطبيق الحد الأقصى للخصم (max_discount_amount) إن وجد
+                    Object maxDiscObj = coupon.get("max_discount_amount");
+                    if (maxDiscObj != null) {
+                        double maxDiscount = ((Number) maxDiscObj).doubleValue();
+                        if (maxDiscount > 0 && discount > maxDiscount) discount = maxDiscount;
+                    }
+
+                    // الخصم لا يتجاوز قيمة الطلب
+                    if (discount > subtotal) discount = subtotal;
 
                     // تحديث عداد استخدام الكوبون
                     db.update("UPDATE coupons SET used_count = used_count + 1 WHERE id = ?", couponId);
@@ -277,15 +335,21 @@ public class OrderController {
                 id, userId
             );
 
-            // جلب تفاصيل المنتجات
+            // جلب تفاصيل المنتجات مع الأسعار الكاملة للفاتورة
             List<Map<String, Object>> items = db.queryForList(
-                "SELECT oi.*, p.name as product_name, p.image as product_image " +
+                "SELECT oi.id, oi.quantity, oi.price, oi.extras, oi.notes, " +
+                "p.name as product_name, p.image as product_image " +
                 "FROM order_items oi " +
                 "JOIN products p ON oi.product_id = p.id " +
                 "WHERE oi.order_id = ?",
                 id
             );
-
+            // حساب subtotal لكل عنصر للعرض في الفاتورة
+            for (Map<String, Object> item : items) {
+                double itemPrice = item.get("price") != null ? ((Number) item.get("price")).doubleValue() : 0;
+                int qty = item.get("quantity") != null ? ((Number) item.get("quantity")).intValue() : 1;
+                item.put("line_total", itemPrice * qty);
+            }
             order.put("items", items);
 
             response.put("success", true);

@@ -757,6 +757,191 @@ public class RestaurantController {
     }
 
     // ============================================
+    // GET /api/restaurant/stats — إحصائيات المطعم
+    // ============================================
+    @GetMapping("/api/restaurant/stats")
+    public Map<String, Object> getRestaurantStats(@RequestHeader("Authorization") String authHeader) {
+        Map<String, Object> response = new HashMap<>();
+        try {
+            String restaurantId = getRestaurantIdFromToken(authHeader);
+
+            // إجمالي الطلبات
+            Long totalOrders = db.queryForObject(
+                "SELECT COUNT(*) FROM orders WHERE restaurant_id = ?", Long.class, restaurantId
+            );
+            // إيرادات الطلبات المسلّمة
+            Double totalRevenue = db.queryForObject(
+                "SELECT COALESCE(SUM(total_price),0) FROM orders WHERE restaurant_id = ? AND status='delivered'",
+                Double.class, restaurantId
+            );
+            // طلبات اليوم
+            Long todayOrders = db.queryForObject(
+                "SELECT COUNT(*) FROM orders WHERE restaurant_id = ? AND DATE(created_at)=CURDATE()",
+                Long.class, restaurantId
+            );
+            // إيرادات اليوم
+            Double todayRevenue = db.queryForObject(
+                "SELECT COALESCE(SUM(total_price),0) FROM orders WHERE restaurant_id = ? AND status='delivered' AND DATE(created_at)=CURDATE()",
+                Double.class, restaurantId
+            );
+            // طلبات الأسبوع
+            Long weekOrders = db.queryForObject(
+                "SELECT COUNT(*) FROM orders WHERE restaurant_id = ? AND created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)",
+                Long.class, restaurantId
+            );
+            // الطلبات النشطة الآن
+            Long activeOrders = db.queryForObject(
+                "SELECT COUNT(*) FROM orders WHERE restaurant_id = ? AND status NOT IN ('delivered','cancelled')",
+                Long.class, restaurantId
+            );
+            // متوسط التقييم
+            Double avgRating = db.queryForObject(
+                "SELECT COALESCE(AVG(restaurant_rating),0) FROM reviews WHERE restaurant_id = ?",
+                Double.class, restaurantId
+            );
+            // أفضل المنتجات مبيعاً
+            List<Map<String, Object>> topProducts = db.queryForList(
+                "SELECT p.name, SUM(oi.quantity) as sold_count, SUM(oi.price*oi.quantity) as revenue " +
+                "FROM order_items oi JOIN products p ON oi.product_id=p.id " +
+                "JOIN orders o ON oi.order_id=o.id " +
+                "WHERE o.restaurant_id=? AND o.status='delivered' " +
+                "GROUP BY p.id, p.name ORDER BY sold_count DESC LIMIT 5",
+                restaurantId
+            );
+            // إيرادات آخر 7 أيام
+            List<Map<String, Object>> dailyRevenue = db.queryForList(
+                "SELECT DATE(created_at) as day, COUNT(*) as orders, COALESCE(SUM(total_price),0) as revenue " +
+                "FROM orders WHERE restaurant_id=? AND created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY) " +
+                "GROUP BY DATE(created_at) ORDER BY day ASC",
+                restaurantId
+            );
+
+            response.put("success", true);
+            response.put("totalOrders",   totalOrders   != null ? totalOrders   : 0);
+            response.put("totalRevenue",  totalRevenue  != null ? totalRevenue  : 0);
+            response.put("todayOrders",   todayOrders   != null ? todayOrders   : 0);
+            response.put("todayRevenue",  todayRevenue  != null ? todayRevenue  : 0);
+            response.put("weekOrders",    weekOrders    != null ? weekOrders    : 0);
+            response.put("activeOrders",  activeOrders  != null ? activeOrders  : 0);
+            response.put("avgRating",     avgRating     != null ? avgRating     : 0);
+            response.put("topProducts",   topProducts);
+            response.put("dailyRevenue",  dailyRevenue);
+        } catch (Exception e) {
+            response.put("success", false);
+            response.put("message", "حدث خطأ: " + e.getMessage());
+        }
+        return response;
+    }
+
+    // ============================================
+    // GET /api/restaurant/products/{id}/extras — إضافات منتج بالمجموعات
+    // ============================================
+    @GetMapping("/api/restaurant/products/{id}/extras")
+    public Map<String, Object> getProductExtrasByRestaurant(
+            @RequestHeader("Authorization") String authHeader,
+            @PathVariable int id) {
+        Map<String, Object> response = new HashMap<>();
+        try {
+            String restaurantId = getRestaurantIdFromToken(authHeader);
+            // إضافة عمود group_name إذا لم يكن موجوداً
+            try { db.execute("ALTER TABLE menu_extras ADD COLUMN group_name VARCHAR(80) DEFAULT 'إضافات'"); } catch (Exception ignored) {}
+            List<Map<String, Object>> extras = db.queryForList(
+                "SELECT me.* FROM menu_extras me " +
+                "JOIN products p ON me.product_id=p.id " +
+                "WHERE me.product_id=? AND p.restaurant_id=? AND me.is_available=1 " +
+                "ORDER BY me.group_name, me.price ASC",
+                id, restaurantId
+            );
+            response.put("success", true);
+            response.put("extras", extras);
+        } catch (Exception e) {
+            response.put("success", false);
+            response.put("message", "حدث خطأ: " + e.getMessage());
+        }
+        return response;
+    }
+
+    // ============================================
+    // POST /api/restaurant/products/{id}/extras/group — إضافة extra مع مجموعة
+    // Body: { name, price, groupName }
+    // ============================================
+    @PostMapping("/api/restaurant/products/{id}/extras/group")
+    public Map<String, Object> addProductExtraGroup(
+            @RequestHeader("Authorization") String authHeader,
+            @PathVariable int id,
+            @RequestBody Map<String, Object> data) {
+        Map<String, Object> response = new HashMap<>();
+        try {
+            String restaurantId = getRestaurantIdFromToken(authHeader);
+            try { db.execute("ALTER TABLE menu_extras ADD COLUMN group_name VARCHAR(80) DEFAULT 'إضافات'"); } catch (Exception ignored) {}
+            List<Map<String, Object>> check = db.queryForList(
+                "SELECT id FROM products WHERE id=? AND restaurant_id=?", id, restaurantId
+            );
+            if (check.isEmpty()) { response.put("success", false); response.put("message", "المنتج غير موجود"); return response; }
+            String name      = (String) data.get("name");
+            Double price     = data.get("price") != null ? ((Number) data.get("price")).doubleValue() : 0.0;
+            String groupName = data.get("groupName") != null ? (String) data.get("groupName") : "إضافات";
+            db.update("INSERT INTO menu_extras (product_id, name, price, group_name) VALUES (?,?,?,?)",
+                id, name, price, groupName);
+            response.put("success", true);
+            response.put("message", "تم إضافة الإضافة بنجاح");
+        } catch (Exception e) {
+            response.put("success", false);
+            response.put("message", "حدث خطأ: " + e.getMessage());
+        }
+        return response;
+    }
+
+    // ============================================
+    // PUT /api/restaurant/products/{id}/availability — تغيير حالة التوفر
+    // ============================================
+    @PutMapping("/api/restaurant/products/{id}/availability")
+    public Map<String, Object> toggleProductAvailability(
+            @RequestHeader("Authorization") String authHeader,
+            @PathVariable int id,
+            @RequestBody Map<String, Object> data) {
+        Map<String, Object> response = new HashMap<>();
+        try {
+            String restaurantId = getRestaurantIdFromToken(authHeader);
+            Boolean available = (Boolean) data.get("isAvailable");
+            int rows = db.update(
+                "UPDATE products SET is_available=? WHERE id=? AND restaurant_id=?",
+                available, id, restaurantId
+            );
+            response.put("success", rows > 0);
+            response.put("message", rows > 0 ? (available ? "المنتج متاح الآن" : "تم إيقاف المنتج مؤقتاً") : "المنتج غير موجود");
+        } catch (Exception e) {
+            response.put("success", false);
+            response.put("message", "حدث خطأ: " + e.getMessage());
+        }
+        return response;
+    }
+
+    // ============================================
+    // GET /api/restaurants/featured/city/{cityId} — مطاعم مميزة حسب المدينة
+    // ============================================
+    @GetMapping("/api/restaurants/featured/city/{cityId}")
+    public Map<String, Object> getFeaturedByCity(@PathVariable int cityId) {
+        Map<String, Object> response = new HashMap<>();
+        try {
+            try { db.execute("ALTER TABLE restaurants ADD COLUMN is_featured TINYINT DEFAULT 0"); } catch (Exception ignored) {}
+            List<Map<String, Object>> restaurants = db.queryForList(
+                "SELECT r.*, c.name as category_name FROM restaurants r " +
+                "LEFT JOIN categories c ON r.category_id=c.id " +
+                "WHERE r.is_active=1 AND r.is_featured=1 AND (r.city_id=? OR r.city_id IS NULL) " +
+                "ORDER BY r.rating DESC LIMIT 10",
+                cityId
+            );
+            response.put("success", true);
+            response.put("restaurants", restaurants);
+        } catch (Exception e) {
+            response.put("success", false);
+            response.put("message", "حدث خطأ: " + e.getMessage());
+        }
+        return response;
+    }
+
+    // ============================================
     // PUT /api/restaurant/hours — تعديل ساعات العمل
     // Body: [ {day_of_week:0, open_time:"09:00", close_time:"23:00", is_closed:false}, ... ]
     // ============================================

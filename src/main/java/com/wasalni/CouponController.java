@@ -76,16 +76,23 @@ public class CouponController {
                 return response;
             }
 
+            // إضافة عمود max_discount_amount إذا لم يكن موجوداً
+            try { db.execute("ALTER TABLE coupons ADD COLUMN max_discount_amount DECIMAL(8,2) DEFAULT NULL"); } catch (Exception ignored) {}
+
             // نحسب قيمة الخصم
             String type = (String) coupon.get("discount_type");
             double value = ((java.math.BigDecimal) coupon.get("discount_value")).doubleValue();
             double discount = 0;
 
             if (type.equals("percentage")) {
-                // خصم نسبة مئوية
                 discount = amount * (value / 100);
+                // تطبيق الحد الأقصى للخصم إن وجد
+                Object maxDiscObj = coupon.get("max_discount_amount");
+                if (maxDiscObj != null) {
+                    double maxDiscount = ((Number) maxDiscObj).doubleValue();
+                    if (maxDiscount > 0 && discount > maxDiscount) discount = maxDiscount;
+                }
             } else {
-                // خصم مبلغ ثابت
                 discount = value;
             }
 
@@ -138,14 +145,16 @@ public class CouponController {
     public Map<String, Object> addCoupon(@RequestBody Map<String, Object> body) {
         Map<String, Object> response = new HashMap<>();
         try {
+            try { db.execute("ALTER TABLE coupons ADD COLUMN max_discount_amount DECIMAL(8,2) DEFAULT NULL"); } catch (Exception ignored) {}
             db.update(
-                "INSERT INTO coupons (code, discount_type, discount_value, min_order, max_uses, expires_at) VALUES (?,?,?,?,?,?)",
+                "INSERT INTO coupons (code, discount_type, discount_value, min_order, max_uses, expires_at, max_discount_amount) VALUES (?,?,?,?,?,?,?)",
                 body.get("code"),
                 body.get("discount_type"),
                 body.get("discount_value"),
                 body.get("min_order"),
                 body.get("max_uses"),
-                body.get("expires_at")
+                body.get("expires_at"),
+                body.get("max_discount_amount")
             );
             response.put("success", true);
             response.put("message", "تم إضافة الكوبون بنجاح");
