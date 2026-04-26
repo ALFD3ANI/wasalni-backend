@@ -21,6 +21,7 @@ package com.wasalni;
 // GET  /api/admin/banners                  - كل الإعلانات
 // POST /api/admin/banners                  - إضافة إعلان
 // DELETE /api/admin/banners/{id}           - حذف إعلان
+// PUT  /api/admin/products/{id}            - تعديل منتج
 // ============================================
 
 import org.springframework.beans.factory.annotation.Autowired;
@@ -1449,6 +1450,36 @@ public class AdminController {
             db.update("DELETE FROM products WHERE id = ?", id);
             response.put("success", true);
             response.put("message", "تم حذف المنتج");
+        } catch (Exception e) {
+            response.put("success", false);
+            response.put("message", "حدث خطأ: " + e.getMessage());
+        }
+        return response;
+    }
+
+    // ============================================
+    // PUT /api/admin/products/{id}
+    // تعديل بيانات منتج (الأدمن)
+    // ============================================
+    @PutMapping("/products/{id}")
+    public Map<String, Object> updateProduct(
+            @RequestHeader("Authorization") String authHeader,
+            @PathVariable int id,
+            @RequestBody Map<String, Object> data) {
+        Map<String, Object> response = new HashMap<>();
+        try {
+            String name        = (String) data.get("name");
+            double price       = data.get("price") != null ? ((Number) data.get("price")).doubleValue() : 0;
+            double oldPrice    = data.get("old_price") != null ? ((Number) data.get("old_price")).doubleValue() : 0;
+            String description = (String) data.get("description");
+            String image       = (String) data.get("image");
+
+            db.update(
+                "UPDATE products SET name=?, price=?, old_price=?, description=?, image=? WHERE id=?",
+                name, price, oldPrice, description, image, id
+            );
+            response.put("success", true);
+            response.put("message", "تم تعديل المنتج");
         } catch (Exception e) {
             response.put("success", false);
             response.put("message", "حدث خطأ: " + e.getMessage());
