@@ -717,6 +717,26 @@ public class AdminController {
     }
 
     // ============================================
+    // DELETE /api/admin/categories/{id}
+    // حذف تصنيف
+    // ============================================
+    @DeleteMapping("/categories/{id}")
+    public Map<String, Object> deleteCategory(
+            @RequestHeader("Authorization") String authHeader,
+            @PathVariable int id) {
+        Map<String, Object> response = new HashMap<>();
+        try {
+            db.update("DELETE FROM categories WHERE id = ?", id);
+            response.put("success", true);
+            response.put("message", "تم حذف التصنيف بنجاح");
+        } catch (Exception e) {
+            response.put("success", false);
+            response.put("message", "حدث خطأ: " + e.getMessage());
+        }
+        return response;
+    }
+
+    // ============================================
     // GET /api/admin/reports/orders-by-status
     // تقرير: توزيع الطلبات حسب الحالة
     // ============================================
