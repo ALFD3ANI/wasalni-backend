@@ -454,6 +454,42 @@ public class AdminController {
     }
 
     // ============================================
+    // GET /api/admin/orders/{id}
+    // تفاصيل طلب واحد مع عناصره
+    // ============================================
+    @GetMapping("/orders/{id}")
+    public Map<String, Object> getOrderDetail(
+            @RequestHeader("Authorization") String authHeader,
+            @PathVariable int id) {
+        Map<String, Object> response = new HashMap<>();
+        try {
+            Map<String, Object> order = db.queryForMap(
+                "SELECT o.*, u.name as user_name, u.email as user_email, u.phone as user_phone, " +
+                "r.name as restaurant_name, r.phone as restaurant_phone, " +
+                "d.name as driver_name, d.phone as driver_phone, d.vehicle_type as driver_vehicle " +
+                "FROM orders o " +
+                "JOIN users u ON o.user_id = u.id " +
+                "JOIN restaurants r ON o.restaurant_id = r.id " +
+                "LEFT JOIN drivers d ON o.driver_id = d.id " +
+                "WHERE o.id = ?", id
+            );
+            List<Map<String, Object>> items = db.queryForList(
+                "SELECT oi.*, p.name as product_name, p.image as product_image " +
+                "FROM order_items oi " +
+                "JOIN products p ON oi.product_id = p.id " +
+                "WHERE oi.order_id = ?", id
+            );
+            response.put("success", true);
+            response.put("order", order);
+            response.put("items", items);
+        } catch (Exception e) {
+            response.put("success", false);
+            response.put("message", "حدث خطأ: " + e.getMessage());
+        }
+        return response;
+    }
+
+    // ============================================
     // PUT /api/admin/orders/{id}/status
     // تحديث حالة الطلب وتعيين سائق
     // ============================================
