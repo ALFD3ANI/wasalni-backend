@@ -1457,6 +1457,29 @@ public class AdminController {
     }
 
     // ============================================
+    // PUT /api/admin/products/{id}/toggle
+    // تفعيل / تعطيل منتج
+    // ============================================
+    @PutMapping("/products/{id}/toggle")
+    public Map<String, Object> toggleProduct(
+            @RequestHeader("Authorization") String authHeader,
+            @PathVariable int id) {
+        Map<String, Object> response = new HashMap<>();
+        try {
+            Map<String, Object> prod = db.queryForMap("SELECT is_available FROM products WHERE id = ?", id);
+            int current = prod.get("is_available") != null ? ((Number) prod.get("is_available")).intValue() : 1;
+            int next = current == 1 ? 0 : 1;
+            db.update("UPDATE products SET is_available = ? WHERE id = ?", next, id);
+            response.put("success", true);
+            response.put("is_available", next);
+        } catch (Exception e) {
+            response.put("success", false);
+            response.put("message", "حدث خطأ: " + e.getMessage());
+        }
+        return response;
+    }
+
+    // ============================================
     // PUT /api/admin/restaurants/{id}
     // تعديل بيانات مطعم كاملة
     // ============================================
