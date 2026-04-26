@@ -1001,7 +1001,7 @@ public class AdminController {
                 "SUM(CASE WHEN st.status='closed' THEN 1 ELSE 0 END) as closed_count, " +
                 "SUM(CASE WHEN st.status='open' THEN 1 ELSE 0 END) as open_count " +
                 "FROM admin_users au " +
-                "LEFT JOIN support_tickets st ON st.assigned_to = au.username " +
+                "LEFT JOIN support_tickets st ON CONVERT(st.assigned_to USING utf8mb4) COLLATE utf8mb4_unicode_ci = CONVERT(au.username USING utf8mb4) COLLATE utf8mb4_unicode_ci " +
                 "GROUP BY au.id, au.name, au.username, au.role " +
                 "ORDER BY closed_count DESC LIMIT 10"
             );
