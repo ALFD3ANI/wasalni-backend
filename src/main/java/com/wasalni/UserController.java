@@ -442,6 +442,43 @@ public class UserController {
     }
 
     // ============================================
+    // PUT /api/user/change-password
+    // تغيير كلمة مرور الزبون
+    // ============================================
+    @PutMapping("/change-password")
+    public Map<String, Object> changePassword(
+            @RequestHeader("Authorization") String authHeader,
+            @RequestBody Map<String, Object> data) {
+        Map<String, Object> response = new HashMap<>();
+        try {
+            String userId = getUserIdFromToken(authHeader);
+            String currentPassword = (String) data.get("currentPassword");
+            String newPassword = (String) data.get("newPassword");
+
+            // جلب كلمة المرور المشفرة الحالية
+            Map<String, Object> user = db.queryForMap("SELECT password FROM users WHERE id = ?", userId);
+            String storedHash = (String) user.get("password");
+
+            // التحقق من كلمة المرور الحالية
+            if (!passwordEncoder.matches(currentPassword, storedHash)) {
+                response.put("success", false);
+                response.put("message", "كلمة المرور الحالية غير صحيحة");
+                return response;
+            }
+
+            // تشفير وحفظ كلمة المرور الجديدة
+            db.update("UPDATE users SET password = ? WHERE id = ?", passwordEncoder.encode(newPassword), userId);
+
+            response.put("success", true);
+            response.put("message", "تم تغيير كلمة المرور بنجاح");
+        } catch (Exception e) {
+            response.put("success", false);
+            response.put("message", "حدث خطأ: " + e.getMessage());
+        }
+        return response;
+    }
+
+    // ============================================
     // DELETE /api/user/favorites/{id}
     // حذف مطعم من المفضلة
     // ============================================

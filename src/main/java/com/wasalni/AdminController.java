@@ -587,7 +587,7 @@ public class AdminController {
     // عرض كل التصنيفات
     // ============================================
     @GetMapping("/categories")
-    public Map<String, Object> getCategories(@RequestHeader("Authorization") String authHeader) {
+    public Map<String, Object> getCategories(@RequestHeader(value="Authorization", required=false) String authHeader) {
         Map<String, Object> response = new HashMap<>();
 
         try {
