@@ -641,7 +641,7 @@ public class AdminController {
     // عرض كل الإعلانات
     // ============================================
     @GetMapping("/banners")
-    public Map<String, Object> getBanners(@RequestHeader("Authorization") String authHeader) {
+    public Map<String, Object> getBanners(@RequestHeader(value="Authorization", required=false) String authHeader) {
         Map<String, Object> response = new HashMap<>();
 
         try {
