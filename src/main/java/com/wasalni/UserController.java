@@ -512,4 +512,34 @@ public class UserController {
 
         return response;
     }
+
+    // ============================================
+    // GET /api/user/wallet/history
+    // سجل النقاط والمحفظة للزبون
+    // ============================================
+    @GetMapping("/wallet/history")
+    public Map<String, Object> getWalletHistory(@RequestHeader("Authorization") String authHeader) {
+        Map<String, Object> response = new HashMap<>();
+        try {
+            String userId = getUserIdFromToken(authHeader);
+
+            // آخر 15 طلب مكتمل مع النقاط المكتسبة
+            List<Map<String, Object>> orders = db.queryForList(
+                "SELECT o.id, o.total_amount, o.created_at, r.name AS restaurant_name, " +
+                "FLOOR(o.total_amount) AS points_earned " +
+                "FROM orders o " +
+                "LEFT JOIN restaurants r ON o.restaurant_id = r.id " +
+                "WHERE o.user_id = ? AND o.status = 'delivered' " +
+                "ORDER BY o.created_at DESC LIMIT 15",
+                userId
+            );
+
+            response.put("success", true);
+            response.put("history", orders);
+        } catch (Exception e) {
+            response.put("success", false);
+            response.put("message", "حدث خطأ: " + e.getMessage());
+        }
+        return response;
+    }
 }
