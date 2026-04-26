@@ -667,8 +667,11 @@ public class CityController {
 
         try {
             List<Map<String, Object>> restaurants = db.queryForList(
-                "SELECT r.*, c.name as category_name FROM restaurants r " +
-                "LEFT JOIN categories c ON r.category_id = c.id " +
+                "SELECT r.*, c.name as category_name, " +
+                "(CASE WHEN (SELECT COUNT(*) FROM restaurant_hours WHERE restaurant_id=r.id)=0 THEN 1 " +
+                " WHEN (SELECT COUNT(*) FROM restaurant_hours WHERE restaurant_id=r.id AND day_of_week=WEEKDAY(NOW()) AND is_closed=0 AND CURTIME() BETWEEN open_time AND close_time)>0 THEN 1 " +
+                " ELSE 0 END) AS is_open " +
+                "FROM restaurants r LEFT JOIN categories c ON r.category_id = c.id " +
                 "WHERE r.city_id = ? AND r.is_active = 1 ORDER BY r.rating DESC",
                 cityId
             );
