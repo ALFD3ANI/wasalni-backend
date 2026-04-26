@@ -224,6 +224,28 @@ public class UserController {
     }
 
     // ============================================
+    // PUT /api/user/addresses/{id}/set-default
+    // تعيين عنوان كافتراضي
+    // ============================================
+    @PutMapping("/addresses/{id}/set-default")
+    public Map<String, Object> setDefaultAddress(
+            @RequestHeader("Authorization") String authHeader,
+            @PathVariable int id) {
+        Map<String, Object> response = new HashMap<>();
+        try {
+            String userId = getUserIdFromToken(authHeader);
+            db.update("UPDATE addresses SET is_default = false WHERE user_id = ?", userId);
+            db.update("UPDATE addresses SET is_default = true WHERE id = ? AND user_id = ?", id, userId);
+            response.put("success", true);
+            response.put("message", "تم تعيين العنوان الافتراضي");
+        } catch (Exception e) {
+            response.put("success", false);
+            response.put("message", "حدث خطأ: " + e.getMessage());
+        }
+        return response;
+    }
+
+    // ============================================
     // GET /api/user/orders
     // سجل طلبات الزبون
     // ============================================
