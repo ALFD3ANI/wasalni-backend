@@ -423,4 +423,94 @@ public class DriverController {
         }
         return response;
     }
+
+    // ============================================
+    // GET /api/driver/ratings
+    // تقييمات السائق من الزبائن
+    // ============================================
+    @GetMapping("/ratings")
+    public Map<String, Object> getDriverRatings(@RequestHeader("Authorization") String authHeader) {
+        Map<String, Object> response = new HashMap<>();
+        try {
+            String driverId = getDriverIdFromToken(authHeader);
+            List<Map<String, Object>> ratings = db.queryForList(
+                "SELECT r.driver_rating AS rating, r.comment, r.created_at, u.name AS user_name " +
+                "FROM reviews r JOIN users u ON r.user_id = u.id " +
+                "WHERE r.driver_id = ? AND r.driver_rating IS NOT NULL " +
+                "ORDER BY r.created_at DESC LIMIT 50",
+                driverId
+            );
+            response.put("success", true);
+            response.put("ratings", ratings);
+        } catch (Exception e) {
+            response.put("success", false);
+            response.put("message", "حدث خطأ: " + e.getMessage());
+        }
+        return response;
+    }
+
+    // ============================================
+    // POST /api/driver/orders/{id}/report
+    // إبلاغ عن مشكلة في الطلب
+    // ============================================
+    @PostMapping("/orders/{id}/report")
+    public Map<String, Object> reportOrderProblem(
+            @RequestHeader("Authorization") String authHeader,
+            @PathVariable int id,
+            @RequestBody Map<String, Object> data) {
+        Map<String, Object> response = new HashMap<>();
+        try {
+            String driverId = getDriverIdFromToken(authHeader);
+            String message = data.get("message") != null ? data.get("message").toString() : "";
+            String subject = "مشكلة في الطلب #" + id + " — السائق #" + driverId;
+            db.update(
+                "INSERT INTO support_tickets (user_id, subject, message, status) VALUES (?,?,?,'open')",
+                Integer.parseInt(driverId), subject, message
+            );
+            response.put("success", true);
+            response.put("message", "تم إرسال البلاغ للإدارة");
+        } catch (Exception e) {
+            response.put("success", false);
+            response.put("message", "حدث خطأ: " + e.getMessage());
+        }
+        return response;
+    }
+
+    // ============================================
+    // PUT /api/driver/change-password
+    // تغيير كلمة مرور السائق
+    // ============================================
+    @PutMapping("/change-password")
+    public Map<String, Object> changePassword(
+            @RequestHeader("Authorization") String authHeader,
+            @RequestBody Map<String, Object> data) {
+        Map<String, Object> response = new HashMap<>();
+        try {
+            String driverId = getDriverIdFromToken(authHeader);
+            String currentPassword = data.get("currentPassword") != null ? data.get("currentPassword").toString() : "";
+            String newPassword = data.get("newPassword") != null ? data.get("newPassword").toString() : "";
+            if (newPassword.length() < 6) {
+                response.put("success", false);
+                response.put("message", "كلمة المرور قصيرة جداً");
+                return response;
+            }
+            Map<String, Object> driver = db.queryForMap("SELECT password FROM drivers WHERE id = ?", driverId);
+            String storedHash = driver.get("password").toString();
+            org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder encoder =
+                new org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder();
+            if (!encoder.matches(currentPassword, storedHash)) {
+                response.put("success", false);
+                response.put("message", "كلمة المرور الحالية غير صحيحة");
+                return response;
+            }
+            String newHash = encoder.encode(newPassword);
+            db.update("UPDATE drivers SET password = ? WHERE id = ?", newHash, driverId);
+            response.put("success", true);
+            response.put("message", "تم تغيير كلمة المرور بنجاح");
+        } catch (Exception e) {
+            response.put("success", false);
+            response.put("message", "حدث خطأ: " + e.getMessage());
+        }
+        return response;
+    }
 }

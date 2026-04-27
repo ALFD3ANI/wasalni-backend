@@ -7,6 +7,7 @@ package com.wasalni;
 // GET  /api/admin/dashboard                - إحصائيات عامة
 // GET  /api/admin/users                    - كل الزبائن
 // PUT  /api/admin/users/{id}/block         - حظر/فك حظر زبون
+// PUT  /api/admin/users/{id}/loyalty       - تعديل نقاط الولاء يدوياً
 // GET  /api/admin/restaurants              - كل المطاعم
 // POST /api/admin/restaurants              - إضافة مطعم جديد
 // PUT  /api/admin/restaurants/{id}/toggle  - تفعيل/تعطيل مطعم
@@ -317,6 +318,57 @@ public class AdminController {
             Map<String, Object> updated = db.queryForMap("SELECT wallet_balance FROM users WHERE id = ?", id);
             response.put("success", true);
             response.put("newBalance", updated.get("wallet_balance"));
+        } catch (Exception e) {
+            response.put("success", false);
+            response.put("message", "حدث خطأ: " + e.getMessage());
+        }
+        return response;
+    }
+
+    // ============================================
+    // PUT /api/admin/users/{id}/loyalty
+    // تعديل نقاط الولاء يدوياً
+    // ============================================
+    @PutMapping("/users/{id}/loyalty")
+    public Map<String, Object> adjustUserLoyalty(
+            @RequestHeader("Authorization") String authHeader,
+            @PathVariable int id,
+            @RequestBody Map<String, Object> data) {
+        Map<String, Object> response = new HashMap<>();
+        try {
+            int points = data.get("points") != null ? ((Number) data.get("points")).intValue() : 0;
+            db.update("UPDATE users SET loyalty_points = GREATEST(0, loyalty_points + ?) WHERE id = ?", points, id);
+            Map<String, Object> updated = db.queryForMap("SELECT loyalty_points FROM users WHERE id = ?", id);
+            response.put("success", true);
+            response.put("newPoints", updated.get("loyalty_points"));
+        } catch (Exception e) {
+            response.put("success", false);
+            response.put("message", "حدث خطأ: " + e.getMessage());
+        }
+        return response;
+    }
+
+    // ============================================
+    // PUT /api/admin/orders/{id}/assign-driver
+    // تخصيص سائق لطلب يدوياً
+    // ============================================
+    @PutMapping("/orders/{id}/assign-driver")
+    public Map<String, Object> assignDriverToOrder(
+            @PathVariable int id,
+            @RequestBody Map<String, Object> data,
+            @RequestHeader("Authorization") String authHeader) {
+        Map<String, Object> response = new HashMap<>();
+        try {
+            int driverId = data.get("driverId") != null ? ((Number) data.get("driverId")).intValue() : 0;
+            if (driverId == 0) {
+                response.put("success", false);
+                response.put("message", "رقم السائق مطلوب");
+                return response;
+            }
+            db.update("UPDATE orders SET driver_id = ?, status = 'accepted' WHERE id = ?", driverId, id);
+            db.update("UPDATE drivers SET is_available = 0 WHERE id = ?", driverId);
+            response.put("success", true);
+            response.put("message", "تم تخصيص السائق بنجاح");
         } catch (Exception e) {
             response.put("success", false);
             response.put("message", "حدث خطأ: " + e.getMessage());
@@ -1684,6 +1736,40 @@ public class AdminController {
     }
 
     // ============================================
+    // GET /api/admin/restaurants/{id}
+    // بيانات مطعم + إحصائيات + آخر الطلبات
+    // ============================================
+    @GetMapping("/restaurants/{id}")
+    public Map<String, Object> getRestaurantDetail(
+            @RequestHeader("Authorization") String authHeader,
+            @PathVariable int id) {
+        Map<String, Object> response = new HashMap<>();
+        try {
+            Map<String, Object> rest = db.queryForMap(
+                "SELECT id, name, phone, address, category, delivery_fee, delivery_time, " +
+                "rating, is_active, is_featured, created_at " +
+                "FROM restaurants WHERE id = ?", id);
+            Map<String, Object> stats = db.queryForMap(
+                "SELECT COUNT(*) as total_orders, " +
+                "COALESCE(SUM(CASE WHEN o.status='delivered' THEN o.total_amount ELSE 0 END),0) as total_revenue, " +
+                "(SELECT COUNT(*) FROM products WHERE restaurant_id = ?) as total_products " +
+                "FROM orders o WHERE o.restaurant_id = ?", id, id);
+            List<Map<String, Object>> recent = db.queryForList(
+                "SELECT o.id, o.status, o.total_amount, o.created_at, u.name as user_name " +
+                "FROM orders o JOIN users u ON o.user_id = u.id " +
+                "WHERE o.restaurant_id = ? ORDER BY o.created_at DESC LIMIT 5", id);
+            response.put("success", true);
+            response.put("restaurant", rest);
+            response.put("stats", stats);
+            response.put("recent_orders", recent);
+        } catch (Exception e) {
+            response.put("success", false);
+            response.put("message", "حدث خطأ: " + e.getMessage());
+        }
+        return response;
+    }
+
+    // ============================================
     // GET /api/admin/restaurants/{id}/orders
     // طلبات مطعم معين
     // ============================================
@@ -1803,6 +1889,42 @@ public class AdminController {
             );
             response.put("success", true);
             response.put("orders", orders);
+        } catch (Exception e) {
+            response.put("success", false);
+            response.put("message", "حدث خطأ: " + e.getMessage());
+        }
+        return response;
+    }
+
+    // ============================================
+    // GET /api/admin/drivers/{id}
+    // بيانات سائق + إحصائيات + آخر التوصيلات
+    // ============================================
+    @GetMapping("/drivers/{id}")
+    public Map<String, Object> getDriverDetail(
+            @RequestHeader("Authorization") String authHeader,
+            @PathVariable int id) {
+        Map<String, Object> response = new HashMap<>();
+        try {
+            Map<String, Object> driver = db.queryForMap(
+                "SELECT id, name, phone, vehicle_type, vehicle_plate, area, is_active, is_blocked, created_at " +
+                "FROM drivers WHERE id = ?", id);
+            Map<String, Object> stats = db.queryForMap(
+                "SELECT COUNT(*) as total_deliveries, " +
+                "COALESCE(SUM(CASE WHEN status='delivered' THEN delivery_fee ELSE 0 END),0) as total_earned, " +
+                "COALESCE(SUM(CASE WHEN status='delivered' THEN 1 ELSE 0 END),0) as completed " +
+                "FROM orders WHERE driver_id = ?", id);
+            List<Map<String, Object>> recent = db.queryForList(
+                "SELECT o.id, o.status, o.delivery_fee, o.created_at, " +
+                "r.name as restaurant_name, u.name as user_name " +
+                "FROM orders o " +
+                "JOIN restaurants r ON o.restaurant_id = r.id " +
+                "JOIN users u ON o.user_id = u.id " +
+                "WHERE o.driver_id = ? ORDER BY o.created_at DESC LIMIT 5", id);
+            response.put("success", true);
+            response.put("driver", driver);
+            response.put("stats", stats);
+            response.put("recent_deliveries", recent);
         } catch (Exception e) {
             response.put("success", false);
             response.put("message", "حدث خطأ: " + e.getMessage());
